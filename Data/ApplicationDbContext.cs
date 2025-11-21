@@ -13,7 +13,8 @@ namespace JWTAuthAPI.Data
             : base(options)
         {
         }
-        
+
         public DbSet<ApplicationUser> ApplicationUsers { get; set; } // DbSet for ApplicationUser entities
+        public DbSet<Inquiry> Inquiries { get; set; } // DbSet for Inquiry entities
     }
 }
