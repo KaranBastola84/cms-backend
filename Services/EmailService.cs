@@ -24,12 +24,12 @@ namespace JWTAuthAPI.Services
             try
             {
                 var smtpSettings = _configuration.GetSection("SmtpSettings");
-                var fromEmail = smtpSettings["FromEmail"];
-                var fromName = smtpSettings["FromName"];
-                var smtpServer = smtpSettings["Server"];
+                var fromEmail = smtpSettings["FromEmail"] ?? throw new InvalidOperationException("SMTP FromEmail is not configured");
+                var fromName = smtpSettings["FromName"] ?? "Coffee School";
+                var smtpServer = smtpSettings["Server"] ?? throw new InvalidOperationException("SMTP Server is not configured");
                 var smtpPort = int.Parse(smtpSettings["Port"] ?? "587");
-                var smtpUsername = smtpSettings["Username"];
-                var smtpPassword = smtpSettings["Password"];
+                var smtpUsername = smtpSettings["Username"] ?? throw new InvalidOperationException("SMTP Username is not configured");
+                var smtpPassword = smtpSettings["Password"] ?? throw new InvalidOperationException("SMTP Password is not configured");
                 var enableSsl = bool.Parse(smtpSettings["EnableSsl"] ?? "true");
 
                 using (var client = new SmtpClient(smtpServer, smtpPort))
