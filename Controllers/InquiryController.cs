@@ -12,10 +12,12 @@ namespace JWTAuthAPI.Controllers
     public class InquiryController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly Services.IEmailService _emailService;
 
-        public InquiryController(ApplicationDbContext context)
+        public InquiryController(ApplicationDbContext context, Services.IEmailService emailService)
         {
             _context = context;
+            _emailService = emailService;
         }
 
         // POST: api/inquiry (Public - No authentication required)
@@ -41,6 +43,9 @@ namespace JWTAuthAPI.Controllers
 
             _context.Inquiries.Add(inquiry);
             await _context.SaveChangesAsync();
+
+            // Send confirmation email (fire and forget - don't wait for it to complete)
+            _ = _emailService.SendInquiryConfirmationEmailAsync(inquiry.Email, inquiry.FullName);
 
             return Ok(ResponseHelper.Success(new
             {
