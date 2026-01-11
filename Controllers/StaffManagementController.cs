@@ -352,9 +352,9 @@ namespace JWTAuthAPI.Controllers
                 return NotFound(ResponseHelper.Error<object>("Staff not found"));
             }
 
-            if (staff.IsVerified && staff.IsActive)
+            if (staff.IsVerified)
             {
-                return BadRequest(ResponseHelper.Error<object>("Staff account is already verified"));
+                return BadRequest(ResponseHelper.Error<object>("Staff account is already verified."));
             }
 
             // Generate new OTP
@@ -437,6 +437,137 @@ namespace JWTAuthAPI.Controllers
             return Ok(ResponseHelper.Success(new
             {
                 message = "Staff account deleted successfully"
+            }));
+        }
+
+        /// <summary>
+        /// Staff requests password change - OTP sent to email (Staff can access this)
+        /// </summary>
+        [HttpPost("request-password-change")]
+        [Authorize(Roles = Roles.Staff)] // Only staff can access
+        public async Task<IActionResult> RequestPasswordChange()
+        {
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized(ResponseHelper.Error<object>("User not authenticated"));
+            }
+
+            var staff = await _context.ApplicationUsers
+                .FirstOrDefaultAsync(u => u.Id.ToString() == userId && u.Role == Roles.Staff);
+
+            if (staff == null)
+            {
+                return NotFound(ResponseHelper.Error<object>("Staff not found"));
+            }
+
+            if (!staff.IsActive)
+            {
+                return BadRequest(ResponseHelper.Error<object>("Staff account is not active"));
+            }
+
+            // Generate 6-digit OTP
+            var otp = new Random().Next(100000, 999999).ToString();
+            var otpExpiry = DateTime.UtcNow.AddMinutes(15);
+
+            staff.OTP = otp;
+            staff.OTPExpiry = otpExpiry;
+            staff.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            // Send OTP email
+            try
+            {
+                await _emailService.SendOTPEmailAsync(
+                    staff.Email,
+                    $"{staff.FirstName} {staff.LastName}",
+                    otp
+                );
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ResponseHelper.Error<object>($"Failed to send OTP email: {ex.Message}", 500));
+            }
+
+            // Log password change request
+            await _auditService.LogAsync(
+                ActionType.UPDATE,
+                "Staff",
+                staff.Id.ToString(),
+                null,
+                null,
+                $"Password change OTP sent to {staff.Email}",
+                staff.Id.ToString(),
+                staff.Email
+            );
+
+            return Ok(ResponseHelper.Success(new
+            {
+                message = "OTP has been sent to your email for password verification",
+                email = staff.Email
+            }));
+        }
+
+        /// <summary>
+        /// Staff verifies OTP and changes password (Staff can access this)
+        /// </summary>
+        [HttpPost("verify-password-change")]
+        [Authorize(Roles = Roles.Staff)] // Only staff can access
+        public async Task<IActionResult> VerifyPasswordChange(VerifyPasswordChangeDto dto)
+        {
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized(ResponseHelper.Error<object>("User not authenticated"));
+            }
+
+            var staff = await _context.ApplicationUsers
+                .FirstOrDefaultAsync(u => u.Id.ToString() == userId && u.Role == Roles.Staff);
+
+            if (staff == null)
+            {
+                return NotFound(ResponseHelper.Error<object>("Staff not found"));
+            }
+
+            if (!staff.IsActive)
+            {
+                return BadRequest(ResponseHelper.Error<object>("Staff account is not active"));
+            }
+
+            if (string.IsNullOrEmpty(staff.OTP) || staff.OTP != dto.OTP)
+            {
+                return BadRequest(ResponseHelper.Error<object>("Invalid OTP"));
+            }
+
+            if (staff.OTPExpiry == null || staff.OTPExpiry < DateTime.UtcNow)
+            {
+                return BadRequest(ResponseHelper.Error<object>("OTP has expired. Please request a new one."));
+            }
+
+            // Update password
+            staff.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+            staff.OTP = null; // Clear OTP
+            staff.OTPExpiry = null;
+            staff.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            // Log password change
+            await _auditService.LogAsync(
+                ActionType.UPDATE,
+                "Staff",
+                staff.Id.ToString(),
+                null,
+                null,
+                $"Password changed successfully for {staff.Email}",
+                staff.Id.ToString(),
+                staff.Email
+            );
+
+            return Ok(ResponseHelper.Success(new
+            {
+                message = "Password changed successfully"
             }));
         }
     }
