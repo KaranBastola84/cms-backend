@@ -352,7 +352,7 @@ namespace JWTAuthAPI.Controllers
                 return NotFound(ResponseHelper.Error<object>("Staff not found"));
             }
 
-            if (staff.IsVerified)
+            if (staff.IsVerified && staff.IsActive)
             {
                 return BadRequest(ResponseHelper.Error<object>("Staff account is already verified"));
             }
