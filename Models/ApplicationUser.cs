@@ -23,6 +23,7 @@ namespace JWTAuthAPI.Models
         public string? LastName { get; set; }
         public string? PhoneNumber { get; set; }
         public string? StaffRole { get; set; } // Specific role for staff (e.g., "Barista Trainer", "Admin Staff")
+        public string? TrainerRole { get; set; } // Specific role for trainer (e.g., "Barista Trainer", "Latte Art Trainer")
         public string? OTP { get; set; } // One-time password for verification
         public DateTime? OTPExpiry { get; set; } // OTP expiration time
         public bool IsVerified { get; set; } = false; // Whether email/OTP is verified
