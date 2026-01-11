@@ -195,6 +195,30 @@ namespace JWTAuthAPI.Controllers
             staff.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
+            // Send activation email
+            try
+            {
+                await _emailService.SendAccountActivationEmailAsync(
+                    staff.Email,
+                    $"{staff.FirstName} {staff.LastName}",
+                    staff.Email
+                );
+            }
+            catch (Exception ex)
+            {
+                // Log but don't fail activation if email fails
+                await _auditService.LogAsync(
+                    ActionType.UPDATE,
+                    "Staff",
+                    staff.Id.ToString(),
+                    null,
+                    null,
+                    $"Failed to send activation email to {staff.Email}: {ex.Message}",
+                    User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+                    User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                );
+            }
+
             // Log activation
             await _auditService.LogAsync(
                 ActionType.UPDATE,
@@ -209,7 +233,7 @@ namespace JWTAuthAPI.Controllers
 
             return Ok(ResponseHelper.Success(new
             {
-                message = "Staff account activated successfully",
+                message = "Staff account activated successfully. Activation email sent.",
                 staffId = staff.Id,
                 email = staff.Email
             }));
