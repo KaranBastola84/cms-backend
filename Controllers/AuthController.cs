@@ -13,11 +13,13 @@ namespace JWTAuthAPI.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly JwtService _jwtService;
+        private readonly Services.IAuditService _auditService;
 
-        public AuthController(ApplicationDbContext context, JwtService jwtService)
+        public AuthController(ApplicationDbContext context, JwtService jwtService, Services.IAuditService auditService)
         {
             _context = context;
             _jwtService = jwtService;
+            _auditService = auditService;
         }
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterDto registerDto)
@@ -45,6 +47,18 @@ namespace JWTAuthAPI.Controllers
             _context.ApplicationUsers.Add(user);
             await _context.SaveChangesAsync();
 
+            // Log user registration
+            await _auditService.LogAsync(
+                ActionType.CREATE,
+                "User",
+                user.Id.ToString(),
+                null,
+                System.Text.Json.JsonSerializer.Serialize(new { user.Username, user.Email, user.Role }),
+                "User registered",
+                user.Id.ToString(),
+                user.Email
+            );
+
             return Ok(new { message = "User registered successfully", userId = user.Id });
         }
 
@@ -66,12 +80,25 @@ namespace JWTAuthAPI.Controllers
 
             // Verify password
             if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+            {
+                // Log failed login attempt
+                await _auditService.LogAsync(
+                    ActionType.LOGIN_FAILED,
+                    "Auth",
+                    user.Id.ToString(),
+                    null,
+                    null,
+                    $"Failed login attempt for username: {loginDto.Username}",
+                    user.Id.ToString(),
+                    user.Email
+                );
                 return Unauthorized(new ApiResponse<string>
                 {
                     StatusCode = 401,
                     IsSuccess = false,
                     ErrorMessage = { "Invalid username or password" }
                 });
+            }
 
             // Check if user is active
             if (!user.IsActive)
@@ -89,6 +116,18 @@ namespace JWTAuthAPI.Controllers
             user.RefreshToken = refreshToken;
             user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
             await _context.SaveChangesAsync();
+
+            // Log successful login
+            await _auditService.LogAsync(
+                ActionType.LOGIN,
+                "Auth",
+                user.Id.ToString(),
+                null,
+                null,
+                $"User logged in: {user.Username}",
+                user.Id.ToString(),
+                user.Email
+            );
 
             return Ok(new ApiResponse<object>
             {
@@ -239,6 +278,18 @@ namespace JWTAuthAPI.Controllers
             user.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
+            // Log logout
+            await _auditService.LogAsync(
+                ActionType.LOGOUT,
+                "Auth",
+                user.Id.ToString(),
+                null,
+                null,
+                $"User logged out: {user.Username}",
+                user.Id.ToString(),
+                user.Email
+            );
+
             return Ok(new ApiResponse<string>
             {
                 StatusCode = 200,
@@ -282,6 +333,18 @@ namespace JWTAuthAPI.Controllers
 
             _context.ApplicationUsers.Add(admin);
             await _context.SaveChangesAsync();
+
+            // Log admin registration
+            await _auditService.LogAsync(
+                ActionType.CREATE,
+                "User",
+                admin.Id.ToString(),
+                null,
+                System.Text.Json.JsonSerializer.Serialize(new { admin.Username, admin.Email, admin.Role }),
+                "Admin user registered",
+                admin.Id.ToString(),
+                admin.Email
+            );
 
             return Ok(new ApiResponse<object>
             {

@@ -12,10 +12,12 @@ namespace JWTAuthAPI.Controllers
     public class UserManagementController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly Services.IAuditService _auditService;
 
-        public UserManagementController(ApplicationDbContext context)
+        public UserManagementController(ApplicationDbContext context, Services.IAuditService auditService)
         {
             _context = context;
+            _auditService = auditService;
         }
 
         // Admin only
@@ -104,8 +106,21 @@ namespace JWTAuthAPI.Controllers
                     ErrorMessage = { "You cannot delete your own account" }
                 });
 
+            // Store user data before deletion
+            var userData = System.Text.Json.JsonSerializer.Serialize(new { user.Username, user.Email, user.Role });
+
             _context.ApplicationUsers.Remove(user);
             await _context.SaveChangesAsync();
+
+            // Log user deletion
+            await _auditService.LogAsync(
+                ActionType.DELETE,
+                "User",
+                user.Id.ToString(),
+                userData,
+                null,
+                $"User {user.Username} deleted by admin"
+            );
 
             return Ok(new ApiResponse<string>
             {
@@ -144,6 +159,16 @@ namespace JWTAuthAPI.Controllers
             user.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
+            // Log user deactivation
+            await _auditService.LogAsync(
+                ActionType.UPDATE,
+                "User",
+                user.Id.ToString(),
+                System.Text.Json.JsonSerializer.Serialize(new { IsActive = true }),
+                System.Text.Json.JsonSerializer.Serialize(new { IsActive = false }),
+                $"User {user.Username} deactivated"
+            );
+
             return Ok(new ApiResponse<string>
             {
                 StatusCode = 200,
@@ -170,6 +195,16 @@ namespace JWTAuthAPI.Controllers
             user.IsActive = true;
             user.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+
+            // Log user activation
+            await _auditService.LogAsync(
+                ActionType.UPDATE,
+                "User",
+                user.Id.ToString(),
+                System.Text.Json.JsonSerializer.Serialize(new { IsActive = false }),
+                System.Text.Json.JsonSerializer.Serialize(new { IsActive = true }),
+                $"User {user.Username} activated"
+            );
 
             return Ok(new ApiResponse<string>
             {
@@ -213,9 +248,20 @@ namespace JWTAuthAPI.Controllers
                     ErrorMessage = { "You cannot change your own role" }
                 });
 
+            var oldRole = user.Role;
             user.Role = roleDto.Role;
             user.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+
+            // Log role change
+            await _auditService.LogAsync(
+                ActionType.ROLE_CHANGE,
+                "User",
+                user.Id.ToString(),
+                System.Text.Json.JsonSerializer.Serialize(new { Role = oldRole }),
+                System.Text.Json.JsonSerializer.Serialize(new { Role = user.Role }),
+                $"User {user.Username} role changed from {oldRole} to {user.Role}"
+            );
 
             return Ok(new ApiResponse<object>
             {
@@ -324,6 +370,18 @@ namespace JWTAuthAPI.Controllers
             user.RefreshTokenExpiryTime = null;
 
             await _context.SaveChangesAsync();
+
+            // Log password change
+            await _auditService.LogAsync(
+                ActionType.PASSWORD_CHANGE,
+                "User",
+                user.Id.ToString(),
+                null,
+                null,
+                $"User {user.Username} changed their password",
+                user.Id.ToString(),
+                user.Email
+            );
 
             return Ok(new ApiResponse<string>
             {

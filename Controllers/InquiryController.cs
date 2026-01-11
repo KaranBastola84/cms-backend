@@ -13,11 +13,13 @@ namespace JWTAuthAPI.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly Services.IEmailService _emailService;
+        private readonly Services.IAuditService _auditService;
 
-        public InquiryController(ApplicationDbContext context, Services.IEmailService emailService)
+        public InquiryController(ApplicationDbContext context, Services.IEmailService emailService, Services.IAuditService auditService)
         {
             _context = context;
             _emailService = emailService;
+            _auditService = auditService;
         }
 
         // POST: api/inquiry (Public - No authentication required)
@@ -43,6 +45,16 @@ namespace JWTAuthAPI.Controllers
 
             _context.Inquiries.Add(inquiry);
             await _context.SaveChangesAsync();
+
+            // Log inquiry submission
+            await _auditService.LogAsync(
+                ActionType.CREATE,
+                "Inquiry",
+                inquiry.Id.ToString(),
+                null,
+                System.Text.Json.JsonSerializer.Serialize(new { inquiry.FullName, inquiry.Email, inquiry.CourseInterest }),
+                "Inquiry submitted by visitor"
+            );
 
             // Send confirmation email (fire and forget - don't wait for it to complete)
             _ = _emailService.SendInquiryConfirmationEmailAsync(inquiry.Email, inquiry.FullName);
@@ -118,6 +130,10 @@ namespace JWTAuthAPI.Controllers
                 return NotFound(ResponseHelper.Error<object>("Inquiry not found", 404));
             }
 
+            // Store old values for audit log
+            var oldStatus = inquiry.Status;
+            var oldNotes = inquiry.ResponseNotes;
+
             inquiry.Status = updateDto.Status;
             inquiry.ResponseNotes = updateDto.ResponseNotes;
 
@@ -127,6 +143,16 @@ namespace JWTAuthAPI.Controllers
             }
 
             await _context.SaveChangesAsync();
+
+            // Log inquiry update
+            await _auditService.LogAsync(
+                ActionType.UPDATE,
+                "Inquiry",
+                inquiry.Id.ToString(),
+                System.Text.Json.JsonSerializer.Serialize(new { Status = oldStatus.ToString(), ResponseNotes = oldNotes }),
+                System.Text.Json.JsonSerializer.Serialize(new { Status = inquiry.Status.ToString(), inquiry.ResponseNotes }),
+                $"Inquiry status updated from {oldStatus} to {inquiry.Status}"
+            );
 
             return Ok(ResponseHelper.Success(inquiry, "Inquiry status updated successfully"));
         }        // DELETE: api/inquiry/{id} (Admin only)
@@ -141,8 +167,21 @@ namespace JWTAuthAPI.Controllers
                 return NotFound(ResponseHelper.Error<object>("Inquiry not found", 404));
             }
 
+            // Store inquiry data before deletion
+            var inquiryData = System.Text.Json.JsonSerializer.Serialize(new { inquiry.FullName, inquiry.Email, inquiry.Status });
+
             _context.Inquiries.Remove(inquiry);
             await _context.SaveChangesAsync();
+
+            // Log inquiry deletion
+            await _auditService.LogAsync(
+                ActionType.DELETE,
+                "Inquiry",
+                id.ToString(),
+                inquiryData,
+                null,
+                $"Inquiry deleted for {inquiry.FullName}"
+            );
 
             return Ok(ResponseHelper.Success(new { message = "Inquiry deleted successfully" }, "Inquiry deleted successfully"));
         }
