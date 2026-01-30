@@ -11,17 +11,20 @@ namespace JWTAuthAPI.Services
         private readonly ApplicationDbContext _context;
         private readonly IPasswordHasher<Student> _passwordHasher;
         private readonly IAuditService _auditService;
+        private readonly IEmailService _emailService;
         private readonly ILogger<StudentService> _logger;
 
         public StudentService(
             ApplicationDbContext context,
             IPasswordHasher<Student> passwordHasher,
             IAuditService auditService,
+            IEmailService emailService,
             ILogger<StudentService> logger)
         {
             _context = context;
             _passwordHasher = passwordHasher;
             _auditService = auditService;
+            _emailService = emailService;
             _logger = logger;
         }
 
@@ -60,6 +63,16 @@ namespace JWTAuthAPI.Services
                 _context.Students.Add(student);
                 await _context.SaveChangesAsync();
 
+                // Send credentials via email
+                try
+                {
+                    await _emailService.SendStudentCredentialsEmailAsync(student.Email, student.Name, tempPassword);
+                }
+                catch (Exception emailEx)
+                {
+                    _logger.LogWarning(emailEx, "Failed to send credentials email to {Email}", student.Email);
+                }
+
                 // Log the action
                 await _auditService.LogAsync(
                     ActionType.CREATE,
@@ -67,12 +80,12 @@ namespace JWTAuthAPI.Services
                     student.StudentId.ToString(),
                     null,
                     $"Created new student: {student.Name} ({student.Email})",
-                    $"Temporary password: {tempPassword}",
+                    $"Temporary password sent to email",
                     createdBy
                 );
 
                 var studentDto = MapToDto(student);
-                return ResponseHelper.Success(studentDto, "Student created successfully");
+                return ResponseHelper.Success(studentDto, "Student created successfully. Login credentials sent to email.");
             }
             catch (Exception ex)
             {

@@ -8,6 +8,7 @@ namespace JWTAuthAPI.Services
         Task SendInquiryConfirmationEmailAsync(string toEmail, string fullName);
         Task SendOTPEmailAsync(string toEmail, string fullName, string otp);
         Task SendAccountActivationEmailAsync(string toEmail, string fullName, string email);
+        Task SendStudentCredentialsEmailAsync(string toEmail, string studentName, string password);
     }
 
     public class EmailService : IEmailService
@@ -388,6 +389,118 @@ namespace JWTAuthAPI.Services
             <p>&copy; {DateTime.UtcNow.Year} Coffee School. All rights reserved.</p>
         </div>
     </div>
+</body>
+</html>";
+        }
+
+        public async Task SendStudentCredentialsEmailAsync(string toEmail, string studentName, string password)
+        {
+            try
+            {
+                var smtpSettings = _configuration.GetSection("SmtpSettings");
+                var fromEmail = smtpSettings["FromEmail"] ?? throw new InvalidOperationException("SMTP FromEmail is not configured");
+                var fromName = smtpSettings["FromName"] ?? "Coffee School";
+                var smtpServer = smtpSettings["Server"] ?? throw new InvalidOperationException("SMTP Server is not configured");
+                var smtpPort = int.Parse(smtpSettings["Port"] ?? "587");
+                var smtpUsername = smtpSettings["Username"] ?? throw new InvalidOperationException("SMTP Username is not configured");
+                var smtpPassword = smtpSettings["Password"] ?? throw new InvalidOperationException("SMTP Password is not configured");
+                var enableSsl = bool.Parse(smtpSettings["EnableSsl"] ?? "true");
+
+                using (var client = new SmtpClient(smtpServer, smtpPort))
+                {
+                    client.EnableSsl = enableSsl;
+                    client.Credentials = new NetworkCredential(smtpUsername, smtpPassword);
+
+                    var mailMessage = new MailMessage
+                    {
+                        From = new MailAddress(fromEmail, fromName),
+                        Subject = "Welcome to Coffee School - Your Student Portal Credentials",
+                        IsBodyHtml = true,
+                        Body = GetStudentCredentialsEmailBody(studentName, toEmail, password)
+                    };
+
+                    mailMessage.To.Add(toEmail);
+
+                    await client.SendMailAsync(mailMessage);
+                    _logger.LogInformation("Student credentials email sent successfully to {Email}", toEmail);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send student credentials email to {Email}", toEmail);
+                throw;
+            }
+        }
+
+        private string GetStudentCredentialsEmailBody(string studentName, string email, string password)
+        {
+            return $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Welcome to Coffee School</title>
+</head>
+<body style='margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;'>
+    <table role='presentation' style='width: 100%; border-collapse: collapse;'>
+        <tr>
+            <td style='padding: 40px 0; text-align: center; background: linear-gradient(135deg, #6B4423 0%, #8B6F47 100%);'>
+                <h1 style='color: #ffffff; margin: 0; font-size: 28px;'>☕ Coffee School</h1>
+            </td>
+        </tr>
+        <tr>
+            <td style='padding: 0;'>
+                <table role='presentation' style='width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
+                    <tr>
+                        <td style='padding: 40px 30px;'>
+                            <h2 style='color: #333333; margin: 0 0 20px 0;'>Welcome to Coffee School! 🎉</h2>
+                            <p style='color: #666666; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;'>
+                                Dear <strong>{studentName}</strong>,
+                            </p>
+                            <p style='color: #666666; font-size: 16px; line-height: 1.5; margin: 0 0 20px 0;'>
+                                Congratulations on your enrollment! Your student account has been successfully created. 
+                                Below are your login credentials for the Student Portal:
+                            </p>
+                            
+                            <div style='background-color: #f8f8f8; border-left: 4px solid #6B4423; padding: 20px; margin: 20px 0; border-radius: 4px;'>
+                                <p style='margin: 0 0 10px 0; color: #333333;'><strong>Email:</strong></p>
+                                <p style='margin: 0 0 20px 0; color: #666666; font-family: monospace; font-size: 14px;'>{email}</p>
+                                
+                                <p style='margin: 0 0 10px 0; color: #333333;'><strong>Temporary Password:</strong></p>
+                                <p style='margin: 0; color: #6B4423; font-family: monospace; font-size: 18px; font-weight: bold;'>{password}</p>
+                            </div>
+
+                            <div style='background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 4px;'>
+                                <p style='margin: 0; color: #856404; font-size: 14px;'>
+                                    ⚠️ <strong>Important:</strong> Please change your password after your first login for security purposes.
+                                </p>
+                            </div>
+
+                            <p style='color: #666666; font-size: 16px; line-height: 1.5; margin: 20px 0;'>
+                                If you have any questions or need assistance, please don't hesitate to contact our support team.
+                            </p>
+
+                            <p style='color: #666666; font-size: 16px; line-height: 1.5; margin: 20px 0 0 0;'>
+                                Best regards,<br>
+                                <strong>Coffee School Team</strong>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td style='padding: 20px; text-align: center;'>
+                <p style='color: #999999; font-size: 12px; margin: 0;'>
+                    © {DateTime.UtcNow.Year} Coffee School. All rights reserved.
+                </p>
+                <p style='color: #999999; font-size: 12px; margin: 5px 0 0 0;'>
+                    This is an automated email. Please do not reply to this message.
+                </p>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>";
         }
