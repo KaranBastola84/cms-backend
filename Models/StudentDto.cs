@@ -19,6 +19,5 @@ namespace JWTAuthAPI.Models
         public decimal FeesTotal { get; set; }
         public decimal FeesRemaining { get; set; }
         public string? ReceiptNumber { get; set; }
-        public string ApprovalStatus { get; set; } = string.Empty;
     }
 }

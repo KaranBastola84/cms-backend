@@ -47,8 +47,6 @@ namespace JWTAuthAPI.Models
         [StringLength(50)]
         public string? ReceiptNumber { get; set; }
 
-        public ApprovalStatus ApprovalStatus { get; set; } = ApprovalStatus.Pending;
-
         [StringLength(500)]
         public string? Address { get; set; }
 
@@ -63,12 +61,5 @@ namespace JWTAuthAPI.Models
         Completed,
         Dropped,
         Suspended
-    }
-
-    public enum ApprovalStatus
-    {
-        Pending,
-        Approved,
-        Rejected
     }
 }

@@ -30,7 +30,5 @@ namespace JWTAuthAPI.Models
         public decimal? FeesTotal { get; set; }
 
         public decimal? FeesPaid { get; set; }
-
-        public ApprovalStatus? ApprovalStatus { get; set; }
     }
 }

@@ -52,7 +52,6 @@ namespace JWTAuthAPI.Services
                     EmergencyContact = createDto.EmergencyContact,
                     DocumentsPath = createDto.DocumentsPath,
                     Status = StudentStatus.Enrolled,
-                    ApprovalStatus = ApprovalStatus.Pending,
                     AdmissionDate = createDto.AdmissionDate ?? DateTime.UtcNow,
                     FeesTotal = createDto.FeesTotal ?? 0,
                     FeesPaid = createDto.FeesPaid ?? 0,
@@ -253,12 +252,6 @@ namespace JWTAuthAPI.Services
                     student.FeesPaid = updateDto.FeesPaid.Value;
                 }
 
-                if (updateDto.ApprovalStatus.HasValue && updateDto.ApprovalStatus != student.ApprovalStatus)
-                {
-                    changes.Add($"Approval status: {student.ApprovalStatus} → {updateDto.ApprovalStatus}");
-                    student.ApprovalStatus = updateDto.ApprovalStatus.Value;
-                }
-
                 if (changes.Any())
                 {
                     student.UpdatedAt = DateTime.UtcNow;
@@ -396,8 +389,7 @@ namespace JWTAuthAPI.Services
                 FeesPaid = student.FeesPaid,
                 FeesTotal = student.FeesTotal,
                 FeesRemaining = student.FeesTotal - student.FeesPaid,
-                ReceiptNumber = student.ReceiptNumber,
-                ApprovalStatus = student.ApprovalStatus.ToString()
+                ReceiptNumber = student.ReceiptNumber
             };
         }
 
