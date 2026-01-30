@@ -25,5 +25,11 @@ namespace JWTAuthAPI.Models
         public string? EmergencyContact { get; set; }
 
         public string? DocumentsPath { get; set; }
+
+        public DateTime? AdmissionDate { get; set; }
+
+        public decimal? FeesTotal { get; set; }
+
+        public decimal? FeesPaid { get; set; }
     }
 }

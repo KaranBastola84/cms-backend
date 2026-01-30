@@ -38,6 +38,17 @@ namespace JWTAuthAPI.Models
 
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+        public DateTime? AdmissionDate { get; set; }
+
+        public decimal FeesPaid { get; set; } = 0;
+
+        public decimal FeesTotal { get; set; } = 0;
+
+        [StringLength(50)]
+        public string? ReceiptNumber { get; set; }
+
+        public ApprovalStatus ApprovalStatus { get; set; } = ApprovalStatus.Pending;
+
         [StringLength(500)]
         public string? Address { get; set; }
 
@@ -52,5 +63,12 @@ namespace JWTAuthAPI.Models
         Completed,
         Dropped,
         Suspended
+    }
+
+    public enum ApprovalStatus
+    {
+        Pending,
+        Approved,
+        Rejected
     }
 }

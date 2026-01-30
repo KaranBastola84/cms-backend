@@ -52,6 +52,10 @@ namespace JWTAuthAPI.Services
                     EmergencyContact = createDto.EmergencyContact,
                     DocumentsPath = createDto.DocumentsPath,
                     Status = StudentStatus.Enrolled,
+                    ApprovalStatus = ApprovalStatus.Pending,
+                    AdmissionDate = createDto.AdmissionDate ?? DateTime.UtcNow,
+                    FeesTotal = createDto.FeesTotal ?? 0,
+                    FeesPaid = createDto.FeesPaid ?? 0,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -231,6 +235,30 @@ namespace JWTAuthAPI.Services
                     student.DocumentsPath = updateDto.DocumentsPath;
                 }
 
+                if (updateDto.AdmissionDate.HasValue && updateDto.AdmissionDate != student.AdmissionDate)
+                {
+                    changes.Add($"Admission date: {student.AdmissionDate?.ToString("yyyy-MM-dd")} → {updateDto.AdmissionDate?.ToString("yyyy-MM-dd")}");
+                    student.AdmissionDate = updateDto.AdmissionDate;
+                }
+
+                if (updateDto.FeesTotal.HasValue && updateDto.FeesTotal != student.FeesTotal)
+                {
+                    changes.Add($"Total fees: {student.FeesTotal} → {updateDto.FeesTotal}");
+                    student.FeesTotal = updateDto.FeesTotal.Value;
+                }
+
+                if (updateDto.FeesPaid.HasValue && updateDto.FeesPaid != student.FeesPaid)
+                {
+                    changes.Add($"Fees paid: {student.FeesPaid} → {updateDto.FeesPaid}");
+                    student.FeesPaid = updateDto.FeesPaid.Value;
+                }
+
+                if (updateDto.ApprovalStatus.HasValue && updateDto.ApprovalStatus != student.ApprovalStatus)
+                {
+                    changes.Add($"Approval status: {student.ApprovalStatus} → {updateDto.ApprovalStatus}");
+                    student.ApprovalStatus = updateDto.ApprovalStatus.Value;
+                }
+
                 if (changes.Any())
                 {
                     student.UpdatedAt = DateTime.UtcNow;
@@ -363,7 +391,13 @@ namespace JWTAuthAPI.Services
                 Address = student.Address,
                 EmergencyContact = student.EmergencyContact,
                 CreatedAt = student.CreatedAt,
-                UpdatedAt = student.UpdatedAt
+                UpdatedAt = student.UpdatedAt,
+                AdmissionDate = student.AdmissionDate,
+                FeesPaid = student.FeesPaid,
+                FeesTotal = student.FeesTotal,
+                FeesRemaining = student.FeesTotal - student.FeesPaid,
+                ReceiptNumber = student.ReceiptNumber,
+                ApprovalStatus = student.ApprovalStatus.ToString()
             };
         }
 
