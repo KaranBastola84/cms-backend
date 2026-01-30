@@ -76,6 +76,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddScoped<JWTAuthAPI.Services.JwtService>(); // Register JwtService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IEmailService, JWTAuthAPI.Services.EmailService>(); // Register EmailService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IAuditService, JWTAuthAPI.Services.AuditService>(); // Register AuditService for dependency injection
+builder.Services.AddScoped<JWTAuthAPI.Services.IStudentService, JWTAuthAPI.Services.StudentService>(); // Register StudentService for dependency injection
+builder.Services.AddScoped(typeof(Microsoft.AspNetCore.Identity.IPasswordHasher<>), typeof(Microsoft.AspNetCore.Identity.PasswordHasher<>)); // Register password hasher for students
 builder.Services.AddHttpContextAccessor(); // Required for AuditService to access HTTP context
 
 var app = builder.Build(); // Build the web application

@@ -17,6 +17,7 @@ namespace JWTAuthAPI.Data
         public DbSet<ApplicationUser> ApplicationUsers { get; set; } // DbSet for ApplicationUser entities
         public DbSet<Inquiry> Inquiries { get; set; } // DbSet for Inquiry entities
         public DbSet<AuditLog> AuditLogs { get; set; } // DbSet for AuditLog entities
+        public DbSet<Student> Students { get; set; } // DbSet for Student entities
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
