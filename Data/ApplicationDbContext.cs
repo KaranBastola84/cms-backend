@@ -18,6 +18,7 @@ namespace JWTAuthAPI.Data
         public DbSet<Inquiry> Inquiries { get; set; } // DbSet for Inquiry entities
         public DbSet<AuditLog> AuditLogs { get; set; } // DbSet for AuditLog entities
         public DbSet<Student> Students { get; set; } // DbSet for Student entities
+        public DbSet<StudentDocument> StudentDocuments { get; set; } // DbSet for Student Documents
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -39,6 +40,20 @@ namespace JWTAuthAPI.Data
 
             modelBuilder.Entity<AuditLog>()
                 .HasIndex(a => a.ActionType);
+
+            // Configure StudentDocument indexes
+            modelBuilder.Entity<StudentDocument>()
+                .HasIndex(d => d.StudentId);
+
+            modelBuilder.Entity<StudentDocument>()
+                .HasIndex(d => d.DocumentType);
+
+            // Configure Student-Document relationship
+            modelBuilder.Entity<StudentDocument>()
+                .HasOne(d => d.Student)
+                .WithMany()
+                .HasForeignKey(d => d.StudentId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }
