@@ -21,7 +21,8 @@ namespace JWTAuthAPI.Controllers
         [HttpPost("upload")]
         [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
         [RequestSizeLimit(5 * 1024 * 1024)] // 5 MB limit
-        public async Task<IActionResult> UploadDocument([FromForm] int studentId, [FromForm] DocumentType documentType, [FromForm] IFormFile file, [FromForm] string? description)
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadDocument(int studentId, int documentType, IFormFile file, string? description)
         {
             if (file == null)
             {
@@ -29,7 +30,7 @@ namespace JWTAuthAPI.Controllers
             }
 
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
-            var result = await _fileService.UploadDocumentAsync(studentId, documentType, file, description, userId);
+            var result = await _fileService.UploadDocumentAsync(studentId, (DocumentType)documentType, file, description, userId);
 
             if (!result.IsSuccess)
             {
@@ -42,17 +43,32 @@ namespace JWTAuthAPI.Controllers
         [HttpPost("upload-multiple")]
         [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
         [RequestSizeLimit(20 * 1024 * 1024)] // 20 MB total limit
-        public async Task<IActionResult> UploadMultipleDocuments([FromForm] int studentId, [FromForm] List<IFormFile> files, [FromForm] List<DocumentType> documentTypes, [FromForm] List<string>? descriptions)
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadMultipleDocuments(int studentId, List<IFormFile> files, string? documentTypes, string? descriptions)
         {
             if (files == null || files.Count == 0)
             {
                 return BadRequest(new { message = "No files provided" });
             }
 
-            if (files.Count != documentTypes.Count)
+            // Parse document types from comma-separated string
+            List<DocumentType> docTypes;
+            try
+            {
+                docTypes = documentTypes?.Split(',').Select(t => (DocumentType)int.Parse(t.Trim())).ToList() ?? new List<DocumentType>();
+            }
+            catch
+            {
+                return BadRequest(new { message = "Invalid document types format. Use comma-separated integers." });
+            }
+
+            if (files.Count != docTypes.Count)
             {
                 return BadRequest(new { message = "Number of files must match number of document types" });
             }
+
+            // Parse descriptions from comma-separated string
+            var descList = descriptions?.Split(',').Select(d => d.Trim()).ToList();
 
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
             var results = new List<StudentDocumentDto>();
@@ -60,8 +76,8 @@ namespace JWTAuthAPI.Controllers
 
             for (int i = 0; i < files.Count; i++)
             {
-                var description = descriptions != null && descriptions.Count > i ? descriptions[i] : null;
-                var result = await _fileService.UploadDocumentAsync(studentId, documentTypes[i], files[i], description, userId);
+                var description = descList != null && descList.Count > i ? descList[i] : null;
+                var result = await _fileService.UploadDocumentAsync(studentId, docTypes[i], files[i], description, userId);
 
                 if (result.IsSuccess && result.Result != null)
                 {
