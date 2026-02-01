@@ -10,6 +10,7 @@ namespace JWTAuthAPI.Services
     {
         private readonly ApplicationDbContext _context;
         private readonly IAuditService _auditService;
+        private readonly IEmailService _emailService;
         private readonly ILogger<ReceiptService> _logger;
         private readonly IWebHostEnvironment _environment;
         private readonly string _receiptsFolder;
@@ -17,11 +18,13 @@ namespace JWTAuthAPI.Services
         public ReceiptService(
             ApplicationDbContext context,
             IAuditService auditService,
+            IEmailService emailService,
             ILogger<ReceiptService> logger,
             IWebHostEnvironment environment)
         {
             _context = context;
             _auditService = auditService;
+            _emailService = emailService;
             _logger = logger;
             _environment = environment;
             _receiptsFolder = Path.Combine(_environment.ContentRootPath, "Uploads", "Receipts");
@@ -74,6 +77,16 @@ namespace JWTAuthAPI.Services
                 {
                     student.ReceiptNumber = receiptNumber;
                     await _context.SaveChangesAsync();
+
+                    // Send admission confirmation email with receipt attached
+                    try
+                    {
+                        await _emailService.SendAdmissionConfirmationEmailAsync(student.Email, student, pdfPath);
+                    }
+                    catch (Exception emailEx)
+                    {
+                        _logger.LogWarning(emailEx, "Failed to send admission confirmation email to {Email}", student.Email);
+                    }
                 }
 
                 // Log the action

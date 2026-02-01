@@ -76,6 +76,16 @@ namespace JWTAuthAPI.Services
                     _logger.LogWarning(emailEx, "Failed to send credentials email to {Email}", student.Email);
                 }
 
+                // Send admission confirmation email
+                try
+                {
+                    await _emailService.SendAdmissionConfirmationEmailAsync(student.Email, student);
+                }
+                catch (Exception emailEx)
+                {
+                    _logger.LogWarning(emailEx, "Failed to send admission confirmation email to {Email}", student.Email);
+                }
+
                 // Log the action
                 await _auditService.LogAsync(
                     ActionType.CREATE,
