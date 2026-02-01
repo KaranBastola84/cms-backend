@@ -19,6 +19,7 @@ namespace JWTAuthAPI.Data
         public DbSet<AuditLog> AuditLogs { get; set; } // DbSet for AuditLog entities
         public DbSet<Student> Students { get; set; } // DbSet for Student entities
         public DbSet<StudentDocument> StudentDocuments { get; set; } // DbSet for Student Documents
+        public DbSet<Receipt> Receipts { get; set; } // DbSet for Receipts
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -53,6 +54,21 @@ namespace JWTAuthAPI.Data
                 .HasOne(d => d.Student)
                 .WithMany()
                 .HasForeignKey(d => d.StudentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure Receipt indexes
+            modelBuilder.Entity<Receipt>()
+                .HasIndex(r => r.ReceiptNumber)
+                .IsUnique();
+
+            modelBuilder.Entity<Receipt>()
+                .HasIndex(r => r.StudentId);
+
+            // Configure Student-Receipt relationship
+            modelBuilder.Entity<Receipt>()
+                .HasOne(r => r.Student)
+                .WithMany()
+                .HasForeignKey(r => r.StudentId)
                 .OnDelete(DeleteBehavior.Cascade);
         }
     }
