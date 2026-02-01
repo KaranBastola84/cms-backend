@@ -14,8 +14,8 @@ namespace JWTAuthAPI.Services
         private readonly string _uploadsFolder;
 
         // Allowed file extensions and max size
-        private readonly string[] _allowedImageExtensions = { ".jpg", ".jpeg", ".png", ".gif" };
-        private readonly string[] _allowedDocumentExtensions = { ".pdf", ".doc", ".docx" };
+        private readonly string[] _allowedImageExtensions = { ".jpg", ".jpeg", ".png" };
+        private readonly string[] _allowedDocumentExtensions = { ".pdf" };
         private readonly long _maxFileSize = 5 * 1024 * 1024; // 5 MB
 
         public FileService(
