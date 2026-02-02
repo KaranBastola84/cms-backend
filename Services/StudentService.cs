@@ -50,7 +50,6 @@ namespace JWTAuthAPI.Services
                     BatchId = createDto.BatchId,
                     Address = createDto.Address,
                     EmergencyContact = createDto.EmergencyContact,
-                    DocumentsPath = createDto.DocumentsPath,
                     Status = StudentStatus.Enrolled,
                     AdmissionDate = createDto.AdmissionDate ?? DateTime.UtcNow,
                     FeesTotal = createDto.FeesTotal ?? 0,

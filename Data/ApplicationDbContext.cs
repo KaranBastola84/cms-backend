@@ -17,6 +17,8 @@ namespace JWTAuthAPI.Data
         public DbSet<ApplicationUser> ApplicationUsers { get; set; } // DbSet for ApplicationUser entities
         public DbSet<Inquiry> Inquiries { get; set; } // DbSet for Inquiry entities
         public DbSet<AuditLog> AuditLogs { get; set; } // DbSet for AuditLog entities
+        public DbSet<Course> Courses { get; set; } // DbSet for Courses
+        public DbSet<Batch> Batches { get; set; } // DbSet for Batches
         public DbSet<Student> Students { get; set; } // DbSet for Student entities
         public DbSet<StudentDocument> StudentDocuments { get; set; } // DbSet for Student Documents
         public DbSet<Receipt> Receipts { get; set; } // DbSet for Receipts
@@ -70,6 +72,27 @@ namespace JWTAuthAPI.Data
                 .WithMany()
                 .HasForeignKey(r => r.StudentId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure Course-Batch relationship
+            modelBuilder.Entity<Batch>()
+                .HasOne(b => b.Course)
+                .WithMany(c => c.Batches)
+                .HasForeignKey(b => b.CourseId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Configure Course-Student relationship
+            modelBuilder.Entity<Student>()
+                .HasOne<Course>()
+                .WithMany(c => c.Students)
+                .HasForeignKey(s => s.CourseId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Configure Batch-Student relationship
+            modelBuilder.Entity<Student>()
+                .HasOne<Batch>()
+                .WithMany(b => b.Students)
+                .HasForeignKey(s => s.BatchId)
+                .OnDelete(DeleteBehavior.SetNull);
         }
     }
 }

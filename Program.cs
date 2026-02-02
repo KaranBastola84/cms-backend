@@ -76,6 +76,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddScoped<JWTAuthAPI.Services.JwtService>(); // Register JwtService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IEmailService, JWTAuthAPI.Services.EmailService>(); // Register EmailService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IAuditService, JWTAuthAPI.Services.AuditService>(); // Register AuditService for dependency injection
+builder.Services.AddScoped<JWTAuthAPI.Services.ICourseService, JWTAuthAPI.Services.CourseService>(); // Register CourseService for dependency injection
+builder.Services.AddScoped<JWTAuthAPI.Services.IBatchService, JWTAuthAPI.Services.BatchService>(); // Register BatchService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IStudentService, JWTAuthAPI.Services.StudentService>(); // Register StudentService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IFileService, JWTAuthAPI.Services.FileService>(); // Register FileService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IReceiptService, JWTAuthAPI.Services.ReceiptService>(); // Register ReceiptService for dependency injection

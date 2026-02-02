@@ -9,5 +9,8 @@ namespace JWTAuthAPI.Helpers
 
         public static ApiResponse<T> Error<T>(string message, int statusCode = 400)
             => new(default, false, statusCode, message);
+
+        public static ApiResponse<T> NotFound<T>(string message = "Not found", int statusCode = 404)
+            => new(default, false, statusCode, message);
     }
 }
