@@ -76,6 +76,11 @@ namespace JWTAuthAPI.Controllers
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
         {
+            // Validate pagination parameters
+            if (page < 1) page = 1;
+            if (pageSize < 1) pageSize = 10;
+            if (pageSize > 100) pageSize = 100; // Max page size limit
+
             var query = _context.Inquiries
                 .Include(i => i.AssignedTo)
                 .AsQueryable();
@@ -107,6 +112,7 @@ namespace JWTAuthAPI.Controllers
                     i.CreatedAt,
                     i.ResponsedAt,
                     i.ResponseNotes,
+                    i.UpdatedAt,
                     i.AssignedToId,
                     i.AssignedAt,
                     i.ConvertedToStudentId,
@@ -153,6 +159,7 @@ namespace JWTAuthAPI.Controllers
                     i.CreatedAt,
                     i.ResponsedAt,
                     i.ResponseNotes,
+                    i.UpdatedAt,
                     i.AssignedToId,
                     i.AssignedAt,
                     i.ConvertedToStudentId,
@@ -188,12 +195,19 @@ namespace JWTAuthAPI.Controllers
                 return NotFound(ResponseHelper.Error<object>("Inquiry not found", 404));
             }
 
+            // Check if inquiry already converted
+            if (inquiry.ConvertedToStudentId.HasValue)
+            {
+                return BadRequest(ResponseHelper.Error<object>("Cannot update status of converted inquiry. Inquiry already converted to student."));
+            }
+
             // Store old values for audit log
             var oldStatus = inquiry.Status;
             var oldNotes = inquiry.ResponseNotes;
 
             inquiry.Status = updateDto.Status;
             inquiry.ResponseNotes = updateDto.ResponseNotes;
+            inquiry.UpdatedAt = DateTime.UtcNow;
 
             if (inquiry.Status != InquiryStatus.Pending && inquiry.ResponsedAt == null)
             {
@@ -227,11 +241,22 @@ namespace JWTAuthAPI.Controllers
                 return NotFound(ResponseHelper.Error<object>("Inquiry not found", 404));
             }
 
+            // Check if inquiry already converted
+            if (inquiry.ConvertedToStudentId.HasValue)
+            {
+                return BadRequest(ResponseHelper.Error<object>("Cannot assign converted inquiry. Inquiry already converted to student."));
+            }
+
             // Verify the assigned user exists and is Staff or Admin
             var assignedUser = await _context.ApplicationUsers.FindAsync(assignDto.AssignedToId);
             if (assignedUser == null)
             {
                 return BadRequest(ResponseHelper.Error<object>("Assigned user not found"));
+            }
+
+            if (!assignedUser.IsActive)
+            {
+                return BadRequest(ResponseHelper.Error<object>("Cannot assign to inactive user"));
             }
 
             if (assignedUser.Role != Roles.Admin && assignedUser.Role != Roles.Staff)
@@ -242,6 +267,7 @@ namespace JWTAuthAPI.Controllers
             var oldAssignedId = inquiry.AssignedToId;
             inquiry.AssignedToId = assignDto.AssignedToId;
             inquiry.AssignedAt = DateTime.UtcNow;
+            inquiry.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
 
@@ -362,6 +388,40 @@ namespace JWTAuthAPI.Controllers
                 return BadRequest(ResponseHelper.Error<object>("A student with this email already exists"));
             }
 
+            // Validate CourseId if provided
+            if (convertDto.CourseId.HasValue)
+            {
+                var courseExists = await _context.Courses.AnyAsync(c => c.CourseId == convertDto.CourseId.Value);
+                if (!courseExists)
+                {
+                    return BadRequest(ResponseHelper.Error<object>($"Course with ID {convertDto.CourseId} does not exist"));
+                }
+            }
+
+            // Validate BatchId if provided
+            if (convertDto.BatchId.HasValue)
+            {
+                var batchExists = await _context.Batches.AnyAsync(b => b.BatchId == convertDto.BatchId.Value);
+                if (!batchExists)
+                {
+                    return BadRequest(ResponseHelper.Error<object>($"Batch with ID {convertDto.BatchId} does not exist"));
+                }
+            }
+
+            // Generate secure random password if not provided
+            string password;
+            if (string.IsNullOrEmpty(convertDto.Password))
+            {
+                // Generate random 12-character password
+                const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%";
+                var random = new Random();
+                password = new string(Enumerable.Repeat(chars, 12).Select(s => s[random.Next(s.Length)]).ToArray());
+            }
+            else
+            {
+                password = convertDto.Password;
+            }
+
             // Create student from inquiry data
             var student = new Student
             {
@@ -376,7 +436,7 @@ namespace JWTAuthAPI.Controllers
                 FeesPaid = convertDto.FeesPaid ?? 0,
                 Address = convertDto.Address,
                 EmergencyContact = convertDto.EmergencyContact,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(convertDto.Password ?? "TempPassword123"), // Temporary password if not provided
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -388,6 +448,7 @@ namespace JWTAuthAPI.Controllers
             inquiry.ConvertedToStudentId = student.StudentId;
             inquiry.ConvertedAt = DateTime.UtcNow;
             inquiry.Status = InquiryStatus.Enrolled;
+            inquiry.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
             // Log conversion
@@ -403,7 +464,8 @@ namespace JWTAuthAPI.Controllers
             return Ok(ResponseHelper.Success(new
             {
                 student,
-                inquiryId = inquiry.Id
+                inquiryId = inquiry.Id,
+                temporaryPassword = string.IsNullOrEmpty(convertDto.Password) ? password : null // Return temp password only if auto-generated
             }, "Inquiry successfully converted to student"));
         }
 
@@ -465,11 +527,20 @@ namespace JWTAuthAPI.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> DeleteInquiry(int id)
         {
-            var inquiry = await _context.Inquiries.FindAsync(id);
+            var inquiry = await _context.Inquiries
+                .Include(i => i.FollowUpNotes)
+                .FirstOrDefaultAsync(i => i.Id == id);
 
             if (inquiry == null)
             {
                 return NotFound(ResponseHelper.Error<object>("Inquiry not found", 404));
+            }
+
+            // Prevent deletion of converted inquiries
+            if (inquiry.ConvertedToStudentId.HasValue)
+            {
+                return BadRequest(ResponseHelper.Error<object>(
+                    $"Cannot delete converted inquiry. This inquiry was converted to student (ID: {inquiry.ConvertedToStudentId}). Delete the student record first if needed."));
             }
 
             // Store inquiry data before deletion
@@ -502,6 +573,7 @@ namespace JWTAuthAPI.Controllers
     // DTO for assigning inquiry
     public class AssignInquiryDto
     {
+        [Required(ErrorMessage = "AssignedToId is required")]
         public int AssignedToId { get; set; }
     }
 
