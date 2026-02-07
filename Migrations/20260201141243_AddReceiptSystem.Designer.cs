@@ -3,6 +3,7 @@ using System;
 using JWTAuthAPI.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace cms_backend.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260201141243_AddReceiptSystem")]
+    partial class AddReceiptSystem
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -143,95 +146,6 @@ namespace cms_backend.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("AuditLogs");
-                });
-
-            modelBuilder.Entity("JWTAuthAPI.Models.Batch", b =>
-                {
-                    b.Property<int>("BatchId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("BatchId"));
-
-                    b.Property<int>("CourseId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("CurrentStudents")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("EndDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("MaxStudents")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("StartDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("TimeSlot")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("BatchId");
-
-                    b.HasIndex("CourseId");
-
-                    b.ToTable("Batches");
-                });
-
-            modelBuilder.Entity("JWTAuthAPI.Models.Course", b =>
-                {
-                    b.Property<int>("CourseId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("CourseId"));
-
-                    b.Property<string>("Code")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<int>("DurationMonths")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("Fees")
-                        .HasColumnType("numeric");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("CourseId");
-
-                    b.ToTable("Courses");
                 });
 
             modelBuilder.Entity("JWTAuthAPI.Models.Inquiry", b =>
@@ -403,10 +317,6 @@ namespace cms_backend.Migrations
 
                     b.HasKey("StudentId");
 
-                    b.HasIndex("BatchId");
-
-                    b.HasIndex("CourseId");
-
                     b.ToTable("Students");
                 });
 
@@ -458,17 +368,6 @@ namespace cms_backend.Migrations
                     b.ToTable("StudentDocuments");
                 });
 
-            modelBuilder.Entity("JWTAuthAPI.Models.Batch", b =>
-                {
-                    b.HasOne("JWTAuthAPI.Models.Course", "Course")
-                        .WithMany("Batches")
-                        .HasForeignKey("CourseId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Course");
-                });
-
             modelBuilder.Entity("JWTAuthAPI.Models.Receipt", b =>
                 {
                     b.HasOne("JWTAuthAPI.Models.Student", "Student")
@@ -480,19 +379,6 @@ namespace cms_backend.Migrations
                     b.Navigation("Student");
                 });
 
-            modelBuilder.Entity("JWTAuthAPI.Models.Student", b =>
-                {
-                    b.HasOne("JWTAuthAPI.Models.Batch", null)
-                        .WithMany("Students")
-                        .HasForeignKey("BatchId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("JWTAuthAPI.Models.Course", null)
-                        .WithMany("Students")
-                        .HasForeignKey("CourseId")
-                        .OnDelete(DeleteBehavior.SetNull);
-                });
-
             modelBuilder.Entity("JWTAuthAPI.Models.StudentDocument", b =>
                 {
                     b.HasOne("JWTAuthAPI.Models.Student", "Student")
@@ -502,18 +388,6 @@ namespace cms_backend.Migrations
                         .IsRequired();
 
                     b.Navigation("Student");
-                });
-
-            modelBuilder.Entity("JWTAuthAPI.Models.Batch", b =>
-                {
-                    b.Navigation("Students");
-                });
-
-            modelBuilder.Entity("JWTAuthAPI.Models.Course", b =>
-                {
-                    b.Navigation("Batches");
-
-                    b.Navigation("Students");
                 });
 #pragma warning restore 612, 618
         }
