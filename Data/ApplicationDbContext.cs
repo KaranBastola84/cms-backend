@@ -16,6 +16,7 @@ namespace JWTAuthAPI.Data
 
         public DbSet<ApplicationUser> ApplicationUsers { get; set; } // DbSet for ApplicationUser entities
         public DbSet<Inquiry> Inquiries { get; set; } // DbSet for Inquiry entities
+        public DbSet<FollowUpNote> FollowUpNotes { get; set; } // DbSet for Inquiry Follow-up Notes
         public DbSet<AuditLog> AuditLogs { get; set; } // DbSet for AuditLog entities
         public DbSet<Course> Courses { get; set; } // DbSet for Courses
         public DbSet<Batch> Batches { get; set; } // DbSet for Batches
