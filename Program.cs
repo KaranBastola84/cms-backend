@@ -8,6 +8,17 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args); // Create a builder for the web application
 
+// Configure CORS policy
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
 builder.Services.AddControllers(); // Add support for controllers
 builder.Services.AddEndpointsApiExplorer(); // Add support for API endpoint exploration
 
@@ -94,6 +105,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Enable CORS
+app.UseCors("AllowAll");
+
 app.UseAuthentication(); // add this
 app.UseAuthorization();
 

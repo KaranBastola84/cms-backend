@@ -30,6 +30,8 @@ namespace JWTAuthAPI.Services
 
         public async Task<ApiResponse<StudentDto>> CreateStudentAsync(CreateStudentDto createDto, string createdBy)
         {
+            // Use transaction to prevent race conditions
+            using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
                 // Check if email already exists
@@ -39,6 +41,16 @@ namespace JWTAuthAPI.Services
                 if (existingStudent != null)
                 {
                     return ResponseHelper.Error<StudentDto>("A student with this email already exists");
+                }
+
+                // Validate batch capacity if batch is assigned (with row lock to prevent race condition)
+                if (createDto.BatchId.HasValue && createDto.BatchId.Value > 0)
+                {
+                    var capacityCheck = await ValidateBatchCapacityAsync(createDto.BatchId.Value, null);
+                    if (!capacityCheck.IsSuccess)
+                    {
+                        return ResponseHelper.Error<StudentDto>(capacityCheck.ErrorMessage.FirstOrDefault() ?? "Batch capacity validation failed");
+                    }
                 }
 
                 var student = new Student
@@ -96,11 +108,14 @@ namespace JWTAuthAPI.Services
                     createdBy
                 );
 
+                await transaction.CommitAsync();
+
                 var studentDto = MapToDto(student);
                 return ResponseHelper.Success(studentDto, "Student created successfully. Login credentials sent to email.");
             }
             catch (Exception ex)
             {
+                await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error creating student");
                 return ResponseHelper.Error<StudentDto>("An error occurred while creating the student");
             }
@@ -215,8 +230,23 @@ namespace JWTAuthAPI.Services
 
                 if (updateDto.BatchId.HasValue && updateDto.BatchId != student.BatchId)
                 {
-                    changes.Add($"BatchId: {student.BatchId} → {updateDto.BatchId}");
-                    student.BatchId = updateDto.BatchId;
+                    // Validate batch capacity if changing batch
+                    if (updateDto.BatchId.Value > 0)
+                    {
+                        var capacityCheck = await ValidateBatchCapacityAsync(updateDto.BatchId.Value, student.StudentId);
+                        if (!capacityCheck.IsSuccess)
+                        {
+                            return ResponseHelper.Error<StudentDto>(capacityCheck.ErrorMessage.FirstOrDefault() ?? "Batch capacity validation failed");
+                        }
+                        changes.Add($"BatchId: {student.BatchId} → {updateDto.BatchId}");
+                        student.BatchId = updateDto.BatchId;
+                    }
+                    else
+                    {
+                        // BatchId = 0 or null means removing from batch
+                        changes.Add($"BatchId: {student.BatchId} → null (removed from batch)");
+                        student.BatchId = null;
+                    }
                 }
 
                 if (updateDto.Status.HasValue && updateDto.Status != student.Status)
@@ -408,6 +438,41 @@ namespace JWTAuthAPI.Services
             var random = new Random();
             return new string(Enumerable.Repeat(chars, 10)
                 .Select(s => s[random.Next(s.Length)]).ToArray());
+        }
+
+        private async Task<ApiResponse<bool>> ValidateBatchCapacityAsync(int batchId, int? excludeStudentId)
+        {
+            try
+            {
+                var batch = await _context.Batches
+                    .FirstOrDefaultAsync(b => b.BatchId == batchId);
+
+                if (batch == null)
+                {
+                    return ResponseHelper.Error<bool>("Batch not found");
+                }
+
+                if (!batch.IsActive)
+                {
+                    return ResponseHelper.Error<bool>("Batch is not active");
+                }
+
+                // Count current students (excluding the student being updated if applicable)
+                var currentStudentCount = await _context.Students
+                    .CountAsync(s => s.BatchId == batchId && (!excludeStudentId.HasValue || s.StudentId != excludeStudentId.Value));
+
+                if (currentStudentCount >= batch.MaxStudents)
+                {
+                    return ResponseHelper.Error<bool>($"Batch is full. Maximum capacity: {batch.MaxStudents}, Current: {currentStudentCount}");
+                }
+
+                return ResponseHelper.Success(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating batch capacity");
+                return ResponseHelper.Error<bool>("Failed to validate batch capacity");
+            }
         }
     }
 }

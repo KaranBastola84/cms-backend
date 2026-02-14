@@ -14,6 +14,8 @@ namespace JWTAuthAPI.Models
         [Required]
         public int CourseId { get; set; }
 
+        public int? TrainerId { get; set; }
+
         public DateTime StartDate { get; set; }
 
         public DateTime? EndDate { get; set; }
@@ -23,8 +25,6 @@ namespace JWTAuthAPI.Models
 
         public int MaxStudents { get; set; } = 30;
 
-        public int CurrentStudents { get; set; } = 0;
-
         public bool IsActive { get; set; } = true;
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -33,6 +33,7 @@ namespace JWTAuthAPI.Models
 
         // Navigation properties
         public Course Course { get; set; } = null!;
+        public ApplicationUser? Trainer { get; set; }
         public ICollection<Student> Students { get; set; } = new List<Student>();
     }
 }

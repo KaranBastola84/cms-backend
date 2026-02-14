@@ -8,6 +8,8 @@ namespace JWTAuthAPI.Models
         public string Name { get; set; } = string.Empty;
         public int CourseId { get; set; }
         public string? CourseName { get; set; }
+        public int? TrainerId { get; set; }
+        public string? TrainerName { get; set; }
         public DateTime StartDate { get; set; }
         public DateTime? EndDate { get; set; }
         public string? TimeSlot { get; set; }
@@ -35,6 +37,8 @@ namespace JWTAuthAPI.Models
         [StringLength(50, ErrorMessage = "Time slot cannot exceed 50 characters")]
         public string? TimeSlot { get; set; }
 
+        public int? TrainerId { get; set; }
+
         [Range(1, 500, ErrorMessage = "Max students must be between 1 and 500")]
         public int MaxStudents { get; set; } = 30;
 
@@ -52,6 +56,8 @@ namespace JWTAuthAPI.Models
 
         [StringLength(50, ErrorMessage = "Time slot cannot exceed 50 characters")]
         public string? TimeSlot { get; set; }
+
+        public int? TrainerId { get; set; }
 
         [Range(1, 500, ErrorMessage = "Max students must be between 1 and 500")]
         public int? MaxStudents { get; set; }

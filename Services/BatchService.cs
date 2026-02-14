@@ -32,10 +32,29 @@ namespace JWTAuthAPI.Services
                     return ResponseHelper.Error<BatchDto>("Course not found");
                 }
 
+                // Validate trainer exists if provided
+                if (createDto.TrainerId.HasValue)
+                {
+                    var trainer = await _context.ApplicationUsers.FirstOrDefaultAsync(u => u.Id == createDto.TrainerId.Value);
+                    if (trainer == null)
+                    {
+                        return ResponseHelper.Error<BatchDto>("Trainer not found");
+                    }
+                    if (trainer.Role != Roles.Trainer)
+                    {
+                        return ResponseHelper.Error<BatchDto>("Selected user is not a trainer");
+                    }
+                    if (!trainer.IsActive)
+                    {
+                        return ResponseHelper.Error<BatchDto>("Cannot assign inactive trainer to batch");
+                    }
+                }
+
                 var batch = new Batch
                 {
                     Name = createDto.Name,
                     CourseId = createDto.CourseId,
+                    TrainerId = createDto.TrainerId,
                     StartDate = createDto.StartDate,
                     EndDate = createDto.EndDate,
                     TimeSlot = createDto.TimeSlot,
@@ -74,6 +93,7 @@ namespace JWTAuthAPI.Services
             {
                 var batch = await _context.Batches
                     .Include(b => b.Course)
+                    .Include(b => b.Trainer)
                     .FirstOrDefaultAsync(b => b.BatchId == batchId);
 
                 if (batch == null)
@@ -97,6 +117,7 @@ namespace JWTAuthAPI.Services
             {
                 var batches = await _context.Batches
                     .Include(b => b.Course)
+                    .Include(b => b.Trainer)
                     .OrderByDescending(b => b.StartDate)
                     .ToListAsync();
 
@@ -121,6 +142,7 @@ namespace JWTAuthAPI.Services
             {
                 var batches = await _context.Batches
                     .Include(b => b.Course)
+                    .Include(b => b.Trainer)
                     .Where(b => b.IsActive)
                     .OrderByDescending(b => b.StartDate)
                     .ToListAsync();
@@ -146,6 +168,7 @@ namespace JWTAuthAPI.Services
             {
                 var batches = await _context.Batches
                     .Include(b => b.Course)
+                    .Include(b => b.Trainer)
                     .Where(b => b.CourseId == courseId)
                     .OrderByDescending(b => b.StartDate)
                     .ToListAsync();
@@ -171,6 +194,7 @@ namespace JWTAuthAPI.Services
             {
                 var batch = await _context.Batches
                     .Include(b => b.Course)
+                    .Include(b => b.Trainer)
                     .FirstOrDefaultAsync(b => b.BatchId == batchId);
 
                 if (batch == null)
@@ -178,11 +202,49 @@ namespace JWTAuthAPI.Services
                     return ResponseHelper.NotFound<BatchDto>("Batch not found");
                 }
 
+                // Validate trainer if being updated
+                if (updateDto.TrainerId.HasValue)
+                {
+                    if (updateDto.TrainerId.Value > 0)
+                    {
+                        var trainer = await _context.ApplicationUsers.FirstOrDefaultAsync(u => u.Id == updateDto.TrainerId.Value);
+                        if (trainer == null)
+                        {
+                            return ResponseHelper.Error<BatchDto>("Trainer not found");
+                        }
+                        if (trainer.Role != Roles.Trainer)
+                        {
+                            return ResponseHelper.Error<BatchDto>("Selected user is not a trainer");
+                        }
+                        if (!trainer.IsActive)
+                        {
+                            return ResponseHelper.Error<BatchDto>("Cannot assign inactive trainer to batch");
+                        }
+                        batch.TrainerId = updateDto.TrainerId.Value;
+                    }
+                    else
+                    {
+                        // Allow removing trainer by setting to null
+                        batch.TrainerId = null;
+                    }
+                }
+
                 if (updateDto.Name != null) batch.Name = updateDto.Name;
                 if (updateDto.StartDate.HasValue) batch.StartDate = updateDto.StartDate.Value;
                 if (updateDto.EndDate.HasValue) batch.EndDate = updateDto.EndDate;
                 if (updateDto.TimeSlot != null) batch.TimeSlot = updateDto.TimeSlot;
-                if (updateDto.MaxStudents.HasValue) batch.MaxStudents = updateDto.MaxStudents.Value;
+                
+                // Validate MaxStudents reduction doesn't go below current enrollment
+                if (updateDto.MaxStudents.HasValue)
+                {
+                    var currentEnrollment = await _context.Students.CountAsync(s => s.BatchId == batchId);
+                    if (updateDto.MaxStudents.Value < currentEnrollment)
+                    {
+                        return ResponseHelper.Error<BatchDto>($"Cannot reduce batch capacity below current enrollment. Current students: {currentEnrollment}");
+                    }
+                    batch.MaxStudents = updateDto.MaxStudents.Value;
+                }
+                
                 if (updateDto.IsActive.HasValue) batch.IsActive = updateDto.IsActive.Value;
 
                 batch.UpdatedAt = DateTime.UtcNow;
@@ -261,6 +323,8 @@ namespace JWTAuthAPI.Services
                 Name = batch.Name,
                 CourseId = batch.CourseId,
                 CourseName = batch.Course?.Name,
+                TrainerId = batch.TrainerId,
+                TrainerName = batch.Trainer != null ? $"{batch.Trainer.FirstName} {batch.Trainer.LastName}".Trim() : null,
                 StartDate = batch.StartDate,
                 EndDate = batch.EndDate,
                 TimeSlot = batch.TimeSlot,
