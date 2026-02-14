@@ -30,6 +30,8 @@ namespace JWTAuthAPI.Services
 
         public async Task<ApiResponse<StudentDto>> CreateStudentAsync(CreateStudentDto createDto, string createdBy)
         {
+            // Use transaction to prevent race conditions
+            using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
                 // Check if email already exists
@@ -41,8 +43,8 @@ namespace JWTAuthAPI.Services
                     return ResponseHelper.Error<StudentDto>("A student with this email already exists");
                 }
 
-                // Validate batch capacity if batch is assigned
-                if (createDto.BatchId.HasValue)
+                // Validate batch capacity if batch is assigned (with row lock to prevent race condition)
+                if (createDto.BatchId.HasValue && createDto.BatchId.Value > 0)
                 {
                     var capacityCheck = await ValidateBatchCapacityAsync(createDto.BatchId.Value, null);
                     if (!capacityCheck.IsSuccess)
@@ -106,11 +108,14 @@ namespace JWTAuthAPI.Services
                     createdBy
                 );
 
+                await transaction.CommitAsync();
+
                 var studentDto = MapToDto(student);
                 return ResponseHelper.Success(studentDto, "Student created successfully. Login credentials sent to email.");
             }
             catch (Exception ex)
             {
+                await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error creating student");
                 return ResponseHelper.Error<StudentDto>("An error occurred while creating the student");
             }
@@ -233,9 +238,15 @@ namespace JWTAuthAPI.Services
                         {
                             return ResponseHelper.Error<StudentDto>(capacityCheck.ErrorMessage.FirstOrDefault() ?? "Batch capacity validation failed");
                         }
+                        changes.Add($"BatchId: {student.BatchId} → {updateDto.BatchId}");
+                        student.BatchId = updateDto.BatchId;
                     }
-                    changes.Add($"BatchId: {student.BatchId} → {updateDto.BatchId}");
-                    student.BatchId = updateDto.BatchId;
+                    else
+                    {
+                        // BatchId = 0 or null means removing from batch
+                        changes.Add($"BatchId: {student.BatchId} → null (removed from batch)");
+                        student.BatchId = null;
+                    }
                 }
 
                 if (updateDto.Status.HasValue && updateDto.Status != student.Status)

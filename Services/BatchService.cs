@@ -44,6 +44,10 @@ namespace JWTAuthAPI.Services
                     {
                         return ResponseHelper.Error<BatchDto>("Selected user is not a trainer");
                     }
+                    if (!trainer.IsActive)
+                    {
+                        return ResponseHelper.Error<BatchDto>("Cannot assign inactive trainer to batch");
+                    }
                 }
 
                 var batch = new Batch
@@ -212,6 +216,10 @@ namespace JWTAuthAPI.Services
                         {
                             return ResponseHelper.Error<BatchDto>("Selected user is not a trainer");
                         }
+                        if (!trainer.IsActive)
+                        {
+                            return ResponseHelper.Error<BatchDto>("Cannot assign inactive trainer to batch");
+                        }
                         batch.TrainerId = updateDto.TrainerId.Value;
                     }
                     else
@@ -225,7 +233,18 @@ namespace JWTAuthAPI.Services
                 if (updateDto.StartDate.HasValue) batch.StartDate = updateDto.StartDate.Value;
                 if (updateDto.EndDate.HasValue) batch.EndDate = updateDto.EndDate;
                 if (updateDto.TimeSlot != null) batch.TimeSlot = updateDto.TimeSlot;
-                if (updateDto.MaxStudents.HasValue) batch.MaxStudents = updateDto.MaxStudents.Value;
+                
+                // Validate MaxStudents reduction doesn't go below current enrollment
+                if (updateDto.MaxStudents.HasValue)
+                {
+                    var currentEnrollment = await _context.Students.CountAsync(s => s.BatchId == batchId);
+                    if (updateDto.MaxStudents.Value < currentEnrollment)
+                    {
+                        return ResponseHelper.Error<BatchDto>($"Cannot reduce batch capacity below current enrollment. Current students: {currentEnrollment}");
+                    }
+                    batch.MaxStudents = updateDto.MaxStudents.Value;
+                }
+                
                 if (updateDto.IsActive.HasValue) batch.IsActive = updateDto.IsActive.Value;
 
                 batch.UpdatedAt = DateTime.UtcNow;

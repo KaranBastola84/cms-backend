@@ -25,8 +25,6 @@ namespace JWTAuthAPI.Models
 
         public int MaxStudents { get; set; } = 30;
 
-        public int CurrentStudents { get; set; } = 0;
-
         public bool IsActive { get; set; } = true;
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
