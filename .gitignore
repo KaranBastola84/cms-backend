@@ -12,6 +12,7 @@
 # Visual Studio / VS Code
 .vscode/
 .idea/
+.github
 
 # Logs
 *.log
