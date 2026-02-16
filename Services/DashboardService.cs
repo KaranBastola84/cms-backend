@@ -53,14 +53,15 @@ namespace JWTAuthAPI.Services
 
                 // Get batch statistics
                 var batches = await _context.Batches.Include(b => b.Students).ToListAsync();
+                var batchesWithCapacity = batches.Where(b => b.MaxStudents > 0).ToList();
                 var batchStats = new BatchStatistics
                 {
                     Total = batches.Count,
                     Active = batches.Count(b => b.StartDate <= now && (b.EndDate == null || b.EndDate >= now)),
                     Upcoming = batches.Count(b => b.StartDate > now),
                     Completed = batches.Count(b => b.EndDate.HasValue && b.EndDate < now),
-                    AverageCapacityUtilization = batches.Any()
-                        ? Math.Round((decimal)batches.Average(b => b.Students.Count * 100.0 / b.MaxStudents), 2)
+                    AverageCapacityUtilization = batchesWithCapacity.Any()
+                        ? Math.Round((decimal)batchesWithCapacity.Average(b => b.Students.Count * 100.0 / b.MaxStudents), 2)
                         : 0
                 };
 
@@ -120,20 +121,19 @@ namespace JWTAuthAPI.Services
                 var paidInstallments = allInstallments.Where(i => i.Status == InstallmentStatus.Paid).ToList();
 
                 // Revenue metrics
+                var todayRevenue = paidInstallments.Where(i => i.PaidDate.HasValue && i.PaidDate.Value.Date == now.Date);
+                var weekRevenue = paidInstallments.Where(i => i.PaidDate.HasValue && i.PaidDate >= weekAgo);
+                var monthRevenue = paidInstallments.Where(i => i.PaidDate.HasValue && i.PaidDate >= monthStart);
+                var distinctStudentCount = paymentPlans.Select(p => p.StudentId).Distinct().Count();
+                
                 var revenueMetrics = new RevenueMetrics
                 {
-                    TotalRevenue = paidInstallments.Sum(i => i.Amount),
-                    RevenueToday = paidInstallments
-                        .Where(i => i.PaidDate.HasValue && i.PaidDate.Value.Date == now.Date)
-                        .Sum(i => i.Amount),
-                    RevenueThisWeek = paidInstallments
-                        .Where(i => i.PaidDate.HasValue && i.PaidDate >= weekAgo)
-                        .Sum(i => i.Amount),
-                    RevenueThisMonth = paidInstallments
-                        .Where(i => i.PaidDate.HasValue && i.PaidDate >= monthStart)
-                        .Sum(i => i.Amount),
-                    AverageRevenuePerStudent = paymentPlans.Any()
-                        ? Math.Round(paidInstallments.Sum(i => i.Amount) / paymentPlans.Select(p => p.StudentId).Distinct().Count(), 2)
+                    TotalRevenue = paidInstallments.Any() ? paidInstallments.Sum(i => i.Amount) : 0,
+                    RevenueToday = todayRevenue.Any() ? todayRevenue.Sum(i => i.Amount) : 0,
+                    RevenueThisWeek = weekRevenue.Any() ? weekRevenue.Sum(i => i.Amount) : 0,
+                    RevenueThisMonth = monthRevenue.Any() ? monthRevenue.Sum(i => i.Amount) : 0,
+                    AverageRevenuePerStudent = distinctStudentCount > 0 && paidInstallments.Any()
+                        ? Math.Round(paidInstallments.Sum(i => i.Amount) / distinctStudentCount, 2)
                         : 0
                 };
 
@@ -157,21 +157,22 @@ namespace JWTAuthAPI.Services
 
                 var outstandingMetrics = new OutstandingMetrics
                 {
-                    TotalOutstanding = paymentPlans.Sum(p => p.BalanceAmount),
-                    OverdueAmount = overdueInstallments.Sum(i => i.Amount),
+                    TotalOutstanding = paymentPlans.Any() ? paymentPlans.Sum(p => p.BalanceAmount) : 0,
+                    OverdueAmount = overdueInstallments.Any() ? overdueInstallments.Sum(i => i.Amount) : 0,
                     OverdueInstallments = overdueInstallments.Count,
                     DefaultersCount = defaulters,
                     StudentsPendingFirstPayment = pendingFirstPaymentCount
                 };
 
                 // Collection metrics
-                var totalExpected = paymentPlans.Sum(p => p.TotalAmount);
+                var totalExpected = paymentPlans.Any() ? paymentPlans.Sum(p => p.TotalAmount) : 0;
+                var totalCollected = paymentPlans.Any() ? paymentPlans.Sum(p => p.PaidAmount) : 0;
                 var collectionMetrics = new CollectionMetrics
                 {
                     ExpectedRevenue = totalExpected,
-                    CollectedRevenue = paymentPlans.Sum(p => p.PaidAmount),
+                    CollectedRevenue = totalCollected,
                     CollectionRate = totalExpected > 0
-                        ? Math.Round((paymentPlans.Sum(p => p.PaidAmount) / totalExpected) * 100, 2)
+                        ? Math.Round((totalCollected / totalExpected) * 100, 2)
                         : 0
                 };
 
@@ -200,9 +201,9 @@ namespace JWTAuthAPI.Services
                 var upcomingPayments = new UpcomingPayments
                 {
                     DueNext7Days = upcomingNext7.Count,
-                    AmountDueNext7Days = upcomingNext7.Sum(i => i.Amount),
+                    AmountDueNext7Days = upcomingNext7.Any() ? upcomingNext7.Sum(i => i.Amount) : 0,
                     DueNext30Days = upcomingNext30.Count,
-                    AmountDueNext30Days = upcomingNext30.Sum(i => i.Amount)
+                    AmountDueNext30Days = upcomingNext30.Any() ? upcomingNext30.Sum(i => i.Amount) : 0
                 };
 
                 var summary = new AdminFinancialSummaryDto
@@ -233,15 +234,24 @@ namespace JWTAuthAPI.Services
                     .Take(limit)
                     .ToListAsync();
 
-                var courseIds = recentStudents.Where(s => s.CourseId.HasValue).Select(s => s.CourseId.Value).Distinct().ToList();
-                var courses = await _context.Courses.Where(c => courseIds.Contains(c.CourseId)).ToDictionaryAsync(c => c.CourseId, c => c);
+                var courseIds = recentStudents
+                    .Where(s => s.CourseId.HasValue && s.CourseId.Value > 0)
+                    .Select(s => s.CourseId!.Value)
+                    .Distinct()
+                    .ToList();
+                    
+                var courses = courseIds.Any() 
+                    ? await _context.Courses.Where(c => courseIds.Contains(c.CourseId)).ToDictionaryAsync(c => c.CourseId, c => c)
+                    : new Dictionary<int, Course>();
 
                 var recentStudentDtos = recentStudents.Select(s => new RecentStudentDto
                 {
                     StudentId = s.StudentId,
                     Name = s.Name,
                     Email = s.Email,
-                    CourseName = s.CourseId.HasValue && courses.ContainsKey(s.CourseId.Value) ? courses[s.CourseId.Value].Name : "N/A",
+                    CourseName = s.CourseId.HasValue && s.CourseId.Value > 0 && courses.ContainsKey(s.CourseId.Value) 
+                        ? courses[s.CourseId.Value].Name 
+                        : "N/A",
                     Status = s.Status.ToString(),
                     CreatedAt = s.CreatedAt
                 }).ToList();
@@ -249,7 +259,7 @@ namespace JWTAuthAPI.Services
                 // Recent payments
                 var recentPayments = await _context.Receipts
                     .Include(r => r.Student)
-                    .Where(r => r.PaymentDate.HasValue)
+                    .Where(r => r.PaymentDate.HasValue && r.Student != null)
                     .OrderByDescending(r => r.PaymentDate)
                     .Take(limit)
                     .Select(r => new RecentPaymentDto
@@ -483,14 +493,22 @@ namespace JWTAuthAPI.Services
 
                 var revenueTrend = paidInstallments
                     .GroupBy(i => new { i.PaidDate!.Value.Year, i.PaidDate.Value.Month })
-                    .Select(g => new RevenueTrendDto
+                    .Select(g => new
                     {
                         Year = g.Key.Year,
-                        Month = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(g.Key.Month).Substring(0, 3),
+                        Month = g.Key.Month,
+                        MonthName = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(g.Key.Month).Substring(0, 3),
                         Revenue = g.Sum(i => i.Amount),
                         PaymentCount = g.Count()
                     })
                     .OrderBy(r => r.Year).ThenBy(r => r.Month)
+                    .Select(r => new RevenueTrendDto
+                    {
+                        Year = r.Year,
+                        Month = r.MonthName,
+                        Revenue = r.Revenue,
+                        PaymentCount = r.PaymentCount
+                    })
                     .ToList();
 
                 charts.RevenueTrend = revenueTrend;
@@ -543,10 +561,11 @@ namespace JWTAuthAPI.Services
 
                 var monthlyAttendance = attendanceRecords
                     .GroupBy(a => new { a.AttendanceDate.Year, a.AttendanceDate.Month })
-                    .Select(g => new MonthlyAttendanceDto
+                    .Select(g => new
                     {
                         Year = g.Key.Year,
-                        Month = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(g.Key.Month).Substring(0, 3),
+                        Month = g.Key.Month,
+                        MonthName = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(g.Key.Month).Substring(0, 3),
                         TotalDays = g.Count(),
                         PresentDays = g.Count(a => a.Status == AttendanceStatus.Present),
                         AttendanceRate = g.Any()
@@ -554,6 +573,14 @@ namespace JWTAuthAPI.Services
                             : 0
                     })
                     .OrderBy(m => m.Year).ThenBy(m => m.Month)
+                    .Select(m => new MonthlyAttendanceDto
+                    {
+                        Year = m.Year,
+                        Month = m.MonthName,
+                        TotalDays = m.TotalDays,
+                        PresentDays = m.PresentDays,
+                        AttendanceRate = m.AttendanceRate
+                    })
                     .ToList();
 
                 charts.MonthlyAttendance = monthlyAttendance;
@@ -571,15 +598,26 @@ namespace JWTAuthAPI.Services
                         Year = i.PaidDate.HasValue ? i.PaidDate.Value.Year : i.CreatedAt.Year,
                         Month = i.PaidDate.HasValue ? i.PaidDate.Value.Month : i.CreatedAt.Month
                     })
-                    .Select(g => new PaymentCollectionDto
+                    .Select(g => new
                     {
                         Year = g.Key.Year,
-                        Month = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(g.Key.Month).Substring(0, 3),
-                        Collected = g.Where(i => i.Status == InstallmentStatus.Paid).Sum(i => i.Amount),
-                        Outstanding = g.Where(i => i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue).Sum(i => i.Amount),
+                        Month = g.Key.Month,
+                        MonthName = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(g.Key.Month).Substring(0, 3),
+                        Collected = g.Where(i => i.Status == InstallmentStatus.Paid).Any() 
+                            ? g.Where(i => i.Status == InstallmentStatus.Paid).Sum(i => i.Amount) : 0,
+                        Outstanding = g.Where(i => i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue).Any()
+                            ? g.Where(i => i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue).Sum(i => i.Amount) : 0,
                         Expected = g.Sum(i => i.Amount)
                     })
                     .OrderBy(p => p.Year).ThenBy(p => p.Month)
+                    .Select(p => new PaymentCollectionDto
+                    {
+                        Year = p.Year,
+                        Month = p.MonthName,
+                        Collected = p.Collected,
+                        Outstanding = p.Outstanding,
+                        Expected = p.Expected
+                    })
                     .ToList();
 
                 charts.PaymentCollection = paymentCollection;
