@@ -102,6 +102,8 @@ builder.Services.AddScoped<JWTAuthAPI.Services.IPaymentPlanService, JWTAuthAPI.S
 builder.Services.AddScoped<JWTAuthAPI.Services.IStripePaymentService, JWTAuthAPI.Services.StripePaymentService>(); // Register StripePaymentService
 builder.Services.AddScoped<JWTAuthAPI.Services.IFeeStructureService, JWTAuthAPI.Services.FeeStructureService>(); // Register FeeStructureService
 builder.Services.AddScoped<JWTAuthAPI.Services.IFinancialReportService, JWTAuthAPI.Services.FinancialReportService>(); // Register FinancialReportService
+// Dashboard Services
+builder.Services.AddScoped<JWTAuthAPI.Services.IDashboardService, JWTAuthAPI.Services.DashboardService>(); // Register DashboardService for admin analytics
 builder.Services.AddScoped(typeof(Microsoft.AspNetCore.Identity.IPasswordHasher<>), typeof(Microsoft.AspNetCore.Identity.PasswordHasher<>)); // Register password hasher for students
 builder.Services.AddHttpContextAccessor(); // Required for AuditService to access HTTP context
 
