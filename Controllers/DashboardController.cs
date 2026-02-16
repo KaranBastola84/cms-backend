@@ -141,5 +141,29 @@ namespace JWTAuthAPI.Controllers
                 return StatusCode(500, ResponseHelper.Error<AdminAttendanceAnalyticsDto>("An error occurred while fetching attendance analytics", 500));
             }
         }
+
+        /// <summary>
+        /// Get notifications for bell icon including payment alerts, new inquiries, attendance issues, and recent activities
+        /// </summary>
+        /// <param name="limit">Maximum number of notifications to return (default: 50, max: 100)</param>
+        [HttpGet("notifications")]
+        public async Task<ActionResult<ApiResponse<NotificationResponseDto>>> GetNotifications([FromQuery] int limit = 50)
+        {
+            try
+            {
+                if (limit < 1 || limit > 100)
+                {
+                    return BadRequest(ResponseHelper.Error<NotificationResponseDto>("Limit must be between 1 and 100", 400));
+                }
+
+                var result = await _dashboardService.GetNotificationsAsync(limit);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetNotifications endpoint");
+                return StatusCode(500, ResponseHelper.Error<NotificationResponseDto>("An error occurred while fetching notifications", 500));
+            }
+        }
     }
 }

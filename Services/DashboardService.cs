@@ -742,5 +742,314 @@ namespace JWTAuthAPI.Services
                 return ResponseHelper.Error<AdminAttendanceAnalyticsDto>($"An error occurred: {ex.Message}");
             }
         }
+
+        public async Task<ApiResponse<NotificationResponseDto>> GetNotificationsAsync(int limit = 50)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                var today = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+                var yesterday = today.AddDays(-1);
+                var notifications = new List<NotificationDto>();
+
+                // 1. CRITICAL PAYMENT ALERTS - Overdue >30 days
+                var criticalPayments = await _context.Installments
+                    .Include(i => i.PaymentPlan)
+                        .ThenInclude(p => p!.Student)
+                    .Where(i => (i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue)
+                               && i.DueDate < now.AddDays(-30))
+                    .GroupBy(i => new { i.PaymentPlan!.StudentId, i.PaymentPlan.Student!.Name })
+                    .Select(g => new
+                    {
+                        StudentId = g.Key.StudentId,
+                        StudentName = g.Key.Name,
+                        OverdueAmount = g.Sum(i => i.Amount),
+                        OverdueDays = (int)(now - g.Min(i => i.DueDate)).TotalDays,
+                        Count = g.Count()
+                    })
+                    .Take(10)
+                    .ToListAsync();
+
+                foreach (var payment in criticalPayments)
+                {
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"payment-critical-{payment.StudentId}-{now.Ticks}",
+                        Type = "payment",
+                        Severity = "critical",
+                        Title = "Critical Payment Overdue",
+                        Message = $"{payment.StudentName} has {payment.Count} payment(s) overdue by {payment.OverdueDays} days (₹{payment.OverdueAmount:N2})",
+                        Timestamp = now.AddDays(-payment.OverdueDays),
+                        ActionUrl = $"/students/{payment.StudentId}",
+                        RelatedId = payment.StudentId,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "amount", payment.OverdueAmount.ToString() },
+                            { "days", payment.OverdueDays.ToString() }
+                        }
+                    });
+                }
+
+                // 2. WARNING PAYMENT ALERTS - Overdue 7-30 days
+                var warningPayments = await _context.Installments
+                    .Include(i => i.PaymentPlan)
+                        .ThenInclude(p => p!.Student)
+                    .Where(i => (i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue)
+                               && i.DueDate < now.AddDays(-7)
+                               && i.DueDate >= now.AddDays(-30))
+                    .GroupBy(i => new { i.PaymentPlan!.StudentId, i.PaymentPlan.Student!.Name })
+                    .Select(g => new
+                    {
+                        StudentId = g.Key.StudentId,
+                        StudentName = g.Key.Name,
+                        OverdueAmount = g.Sum(i => i.Amount),
+                        OverdueDays = (int)(now - g.Min(i => i.DueDate)).TotalDays,
+                        Count = g.Count()
+                    })
+                    .Take(10)
+                    .ToListAsync();
+
+                foreach (var payment in warningPayments)
+                {
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"payment-warning-{payment.StudentId}-{now.Ticks}",
+                        Type = "payment",
+                        Severity = "warning",
+                        Title = "Payment Overdue",
+                        Message = $"{payment.StudentName} has overdue payment of ₹{payment.OverdueAmount:N2} ({payment.OverdueDays} days)",
+                        Timestamp = now.AddDays(-payment.OverdueDays),
+                        ActionUrl = $"/students/{payment.StudentId}",
+                        RelatedId = payment.StudentId,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "amount", payment.OverdueAmount.ToString() },
+                            { "days", payment.OverdueDays.ToString() }
+                        }
+                    });
+                }
+
+                // 3. NEW INQUIRIES - Last 24 hours
+                var newInquiries = await _context.Inquiries
+                    .Where(i => i.CreatedAt >= yesterday)
+                    .OrderByDescending(i => i.CreatedAt)
+                    .Take(20)
+                    .ToListAsync();
+
+                foreach (var inquiry in newInquiries)
+                {
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"inquiry-new-{inquiry.Id}",
+                        Type = "inquiry",
+                        Severity = "info",
+                        Title = "New Inquiry Received",
+                        Message = $"{inquiry.FullName} inquired about {inquiry.CourseInterest ?? "courses"}",
+                        Timestamp = inquiry.CreatedAt,
+                        ActionUrl = $"/inquiries/{inquiry.Id}",
+                        RelatedId = inquiry.Id,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "email", inquiry.Email },
+                            { "phone", inquiry.PhoneNumber ?? "" }
+                        }
+                    });
+                }
+
+                // 4. PENDING INQUIRIES - Not followed up for >3 days
+                var pendingInquiries = await _context.Inquiries
+                    .Where(i => (i.Status == InquiryStatus.Pending || i.Status == InquiryStatus.InProgress)
+                               && i.CreatedAt < now.AddDays(-3)
+                               && i.CreatedAt >= now.AddDays(-30))
+                    .OrderBy(i => i.CreatedAt)
+                    .Take(10)
+                    .ToListAsync();
+
+                foreach (var inquiry in pendingInquiries)
+                {
+                    var daysSince = (int)(now - inquiry.CreatedAt).TotalDays;
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"inquiry-pending-{inquiry.Id}",
+                        Type = "inquiry",
+                        Severity = "warning",
+                        Title = "Inquiry Needs Follow-up",
+                        Message = $"{inquiry.FullName}'s inquiry is pending for {daysSince} days",
+                        Timestamp = inquiry.CreatedAt,
+                        ActionUrl = $"/inquiries/{inquiry.Id}",
+                        RelatedId = inquiry.Id,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "daysPending", daysSince.ToString() },
+                            { "status", inquiry.Status.ToString() }
+                        }
+                    });
+                }
+
+                // 5. ATTENDANCE ALERTS - Critical (5+ consecutive absences or <75% attendance)
+                var attendanceRecords = await _context.Attendances
+                    .Include(a => a.Student)
+                    .Include(a => a.Batch)
+                    .Where(a => a.AttendanceDate >= now.AddDays(-30))
+                    .ToListAsync();
+
+                var criticalAttendance = attendanceRecords
+                    .GroupBy(a => new { a.StudentId, a.Student!.Name, BatchName = a.Batch!.Name })
+                    .Select(g => new
+                    {
+                        StudentId = g.Key.StudentId,
+                        StudentName = g.Key.Name,
+                        BatchName = g.Key.BatchName,
+                        TotalDays = g.Count(),
+                        PresentDays = g.Count(a => a.Status == AttendanceStatus.Present),
+                        ConsecutiveAbsences = CalculateConsecutiveAbsences(g.OrderByDescending(a => a.AttendanceDate).ToList())
+                    })
+                    .Where(x => x.TotalDays > 0 && (x.ConsecutiveAbsences >= 5 || (decimal)x.PresentDays / x.TotalDays < 0.75m))
+                    .Take(10)
+                    .ToList();
+
+                foreach (var attendance in criticalAttendance)
+                {
+                    var percentage = Math.Round((decimal)attendance.PresentDays / attendance.TotalDays * 100, 1);
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"attendance-critical-{attendance.StudentId}",
+                        Type = "attendance",
+                        Severity = "critical",
+                        Title = "Critical Attendance Issue",
+                        Message = attendance.ConsecutiveAbsences >= 5
+                            ? $"{attendance.StudentName} has {attendance.ConsecutiveAbsences} consecutive absences in {attendance.BatchName}"
+                            : $"{attendance.StudentName} has {percentage}% attendance in {attendance.BatchName}",
+                        Timestamp = now.AddDays(-1),
+                        ActionUrl = $"/students/{attendance.StudentId}",
+                        RelatedId = attendance.StudentId,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "percentage", percentage.ToString() },
+                            { "consecutiveAbsences", attendance.ConsecutiveAbsences.ToString() }
+                        }
+                    });
+                }
+
+                // 6. NEW ADMISSIONS - Today
+                var newStudents = await _context.Students
+                    .Where(s => s.CreatedAt >= today)
+                    .OrderByDescending(s => s.CreatedAt)
+                    .Take(20)
+                    .ToListAsync();
+
+                var courseIds = newStudents.Where(s => s.CourseId.HasValue).Select(s => s.CourseId!.Value).Distinct().ToList();
+                var courses = courseIds.Any()
+                    ? await _context.Courses.Where(c => courseIds.Contains(c.CourseId)).ToDictionaryAsync(c => c.CourseId, c => c.Name)
+                    : new Dictionary<int, string>();
+
+                foreach (var student in newStudents)
+                {
+                    var courseName = student.CourseId.HasValue && courses.ContainsKey(student.CourseId.Value)
+                        ? courses[student.CourseId.Value]
+                        : "N/A";
+
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"admission-{student.StudentId}",
+                        Type = "admission",
+                        Severity = "info",
+                        Title = "New Student Admission",
+                        Message = $"{student.Name} enrolled in {courseName}",
+                        Timestamp = student.CreatedAt,
+                        ActionUrl = $"/students/{student.StudentId}",
+                        RelatedId = student.StudentId,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "course", courseName },
+                            { "status", student.Status.ToString() }
+                        }
+                    });
+                }
+
+                // 7. BATCH STARTING SOON - Within 7 days
+                var upcomingBatches = await _context.Batches
+                    .Include(b => b.Course)
+                    .Include(b => b.Students)
+                    .Where(b => b.StartDate > now && b.StartDate <= now.AddDays(7))
+                    .ToListAsync();
+
+                foreach (var batch in upcomingBatches)
+                {
+                    var daysUntil = (int)(batch.StartDate - now).TotalDays;
+                    var enrollmentPercentage = batch.MaxStudents > 0
+                        ? Math.Round((decimal)batch.Students.Count / batch.MaxStudents * 100, 0)
+                        : 0;
+
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"batch-starting-{batch.BatchId}",
+                        Type = "batch",
+                        Severity = enrollmentPercentage < 50 ? "warning" : "info",
+                        Title = daysUntil == 0 ? "Batch Starting Today" : $"Batch Starting in {daysUntil} Day(s)",
+                        Message = $"{batch.Name} ({batch.Course!.Name}) - {batch.Students.Count}/{batch.MaxStudents} enrolled",
+                        Timestamp = batch.StartDate.AddDays(-7),
+                        ActionUrl = $"/batches/{batch.BatchId}",
+                        RelatedId = batch.BatchId,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "enrollment", batch.Students.Count.ToString() },
+                            { "capacity", batch.MaxStudents.ToString() },
+                            { "daysUntil", daysUntil.ToString() }
+                        }
+                    });
+                }
+
+                // 8. RECENT PAYMENTS - Today (Info notifications)
+                var recentPayments = await _context.Receipts
+                    .Include(r => r.Student)
+                    .Where(r => r.PaymentDate.HasValue && r.PaymentDate >= today)
+                    .OrderByDescending(r => r.PaymentDate)
+                    .Take(10)
+                    .ToListAsync();
+
+                foreach (var payment in recentPayments)
+                {
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"payment-received-{payment.ReceiptId}",
+                        Type = "payment_received",
+                        Severity = "info",
+                        Title = "Payment Received",
+                        Message = $"₹{payment.Amount:N2} received from {payment.Student?.Name ?? "Student"}",
+                        Timestamp = payment.PaymentDate!.Value,
+                        ActionUrl = $"/students/{payment.StudentId}",
+                        RelatedId = payment.StudentId,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "amount", payment.Amount.ToString() },
+                            { "method", payment.PaymentMethod ?? "N/A" }
+                        }
+                    });
+                }
+
+                // Sort all notifications by timestamp (newest first) and take limit
+                var sortedNotifications = notifications
+                    .OrderByDescending(n => n.Timestamp)
+                    .Take(limit)
+                    .ToList();
+
+                // Calculate counts
+                var response = new NotificationResponseDto
+                {
+                    Notifications = sortedNotifications,
+                    UnreadCount = sortedNotifications.Count, // In real app, track read status in DB
+                    CriticalCount = sortedNotifications.Count(n => n.Severity == "critical"),
+                    WarningCount = sortedNotifications.Count(n => n.Severity == "warning")
+                };
+
+                return ResponseHelper.Success(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting notifications");
+                return ResponseHelper.Error<NotificationResponseDto>($"An error occurred: {ex.Message}");
+            }
+        }
     }
 }
