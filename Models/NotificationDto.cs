@@ -21,4 +21,9 @@ namespace JWTAuthAPI.Models
         public int? RelatedId { get; set; } // Student/Inquiry/Batch ID
         public Dictionary<string, string> Metadata { get; set; } = new();
     }
+
+    public class MarkNotificationReadDto
+    {
+        public string NotificationKey { get; set; } = string.Empty;
+    }
 }

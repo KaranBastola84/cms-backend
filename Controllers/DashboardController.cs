@@ -176,13 +176,13 @@ namespace JWTAuthAPI.Controllers
         /// <summary>
         /// Mark a single notification as read
         /// </summary>
-        /// <param name="notificationKey">The notification key/ID to mark as read</param>
+        /// <param name="request">Request containing the notification key to mark as read</param>
         [HttpPost("notifications/mark-read")]
-        public async Task<ActionResult<ApiResponse<bool>>> MarkNotificationAsRead([FromBody] string notificationKey)
+        public async Task<ActionResult<ApiResponse<bool>>> MarkNotificationAsRead([FromBody] MarkNotificationReadDto request)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(notificationKey))
+                if (request == null || string.IsNullOrWhiteSpace(request.NotificationKey))
                 {
                     return BadRequest(ResponseHelper.Error<bool>("Notification key is required", 400));
                 }
@@ -193,7 +193,7 @@ namespace JWTAuthAPI.Controllers
                     return Unauthorized(ResponseHelper.Error<bool>("User ID not found in token", 401));
                 }
 
-                var result = await _dashboardService.MarkNotificationAsReadAsync(userId, notificationKey);
+                var result = await _dashboardService.MarkNotificationAsReadAsync(userId, request.NotificationKey);
                 return Ok(result);
             }
             catch (Exception ex)
