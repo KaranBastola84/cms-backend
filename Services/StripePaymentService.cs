@@ -36,26 +36,50 @@ namespace JWTAuthAPI.Services
         {
             try
             {
+                // Validate input
+                if (dto.Amount <= 0)
+                {
+                    return ResponseHelper.Error<StripePaymentResponseDto>("Amount must be greater than zero");
+                }
+
+                if (string.IsNullOrWhiteSpace(dto.Currency))
+                {
+                    return ResponseHelper.Error<StripePaymentResponseDto>("Currency is required");
+                }
+
                 // Validate student
                 var student = await _context.Students.FindAsync(dto.StudentId);
                 if (student == null)
                 {
-                    return ResponseHelper.Error<StripePaymentResponseDto>("Student not found");
+                    return ResponseHelper.Error<StripePaymentResponseDto>($"Student with ID {dto.StudentId} not found");
                 }
 
                 // Validate installment
                 var installment = await _context.Installments
                     .Include(i => i.PaymentPlan)
+                        .ThenInclude(p => p!.Student)
                     .FirstOrDefaultAsync(i => i.InstallmentId == dto.InstallmentId);
 
                 if (installment == null)
                 {
-                    return ResponseHelper.Error<StripePaymentResponseDto>("Installment not found");
+                    return ResponseHelper.Error<StripePaymentResponseDto>($"Installment with ID {dto.InstallmentId} not found");
                 }
 
                 if (installment.Status == InstallmentStatus.Paid)
                 {
-                    return ResponseHelper.Error<StripePaymentResponseDto>("Installment already paid");
+                    return ResponseHelper.Error<StripePaymentResponseDto>("This installment has already been paid");
+                }
+
+                // Verify installment belongs to the student
+                if (installment.PaymentPlan?.StudentId != dto.StudentId)
+                {
+                    return ResponseHelper.Error<StripePaymentResponseDto>("Installment does not belong to this student");
+                }
+
+                // Validate amount matches installment amount
+                if (Math.Abs(dto.Amount - installment.Amount) > 0.01m)
+                {
+                    return ResponseHelper.Error<StripePaymentResponseDto>($"Payment amount ({dto.Amount}) does not match installment amount ({installment.Amount})");
                 }
 
                 // Create Stripe Payment Intent
@@ -123,8 +147,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating payment intent");
-                return ResponseHelper.Error<StripePaymentResponseDto>("An error occurred while creating payment intent");
+                _logger.LogError(ex, "Error creating payment intent for StudentId: {StudentId}", dto.StudentId);
+                return ResponseHelper.Error<StripePaymentResponseDto>($"An error occurred while creating payment intent: {ex.Message}");
             }
         }
 
@@ -173,8 +197,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting student payments");
-                return ResponseHelper.Error<List<StripePaymentResponseDto>>("An error occurred while retrieving payments");
+                _logger.LogError(ex, "Error getting Stripe payments for StudentId: {StudentId}", studentId);
+                return ResponseHelper.Error<List<StripePaymentResponseDto>>($"An error occurred while retrieving payments: {ex.Message}");
             }
         }
 
@@ -232,8 +256,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error handling webhook");
-                return ResponseHelper.Error<string>("An error occurred while handling webhook");
+                _logger.LogError(ex, "Error handling Stripe webhook for event type: {EventType}", stripeEvent.Type);
+                return ResponseHelper.Error<string>($"An error occurred while processing webhook: {ex.Message}");
             }
         }
 
@@ -281,8 +305,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error confirming payment");
-                return ResponseHelper.Error<StripePaymentResponseDto>("An error occurred while confirming payment");
+                _logger.LogError(ex, "Error confirming payment {PaymentId}", paymentId);
+                return ResponseHelper.Error<StripePaymentResponseDto>($"An error occurred while confirming payment: {ex.Message}");
             }
         }
 

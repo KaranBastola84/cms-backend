@@ -10,20 +10,17 @@ namespace JWTAuthAPI.Services
         private readonly ApplicationDbContext _context;
         private readonly IAuditService _auditService;
         private readonly IReceiptService _receiptService;
-        private readonly IStudentService _studentService;
         private readonly ILogger<PaymentPlanService> _logger;
 
         public PaymentPlanService(
             ApplicationDbContext context,
             IAuditService auditService,
             IReceiptService receiptService,
-            IStudentService studentService,
             ILogger<PaymentPlanService> logger)
         {
             _context = context;
             _auditService = auditService;
             _receiptService = receiptService;
-            _studentService = studentService;
             _logger = logger;
         }
 
@@ -31,11 +28,41 @@ namespace JWTAuthAPI.Services
         {
             try
             {
+                // Validate input
+                if (dto.TotalAmount <= 0)
+                {
+                    return ResponseHelper.Error<PaymentPlanResponseDto>("Total amount must be greater than zero");
+                }
+
+                if (dto.NumberOfInstallments <= 0)
+                {
+                    return ResponseHelper.Error<PaymentPlanResponseDto>("Number of installments must be at least 1");
+                }
+
+                if (string.IsNullOrWhiteSpace(createdBy))
+                {
+                    return ResponseHelper.Error<PaymentPlanResponseDto>("Creator information is required");
+                }
+
                 // Validate student exists
                 var student = await _context.Students.FindAsync(dto.StudentId);
                 if (student == null)
                 {
-                    return ResponseHelper.Error<PaymentPlanResponseDto>("Student not found");
+                    return ResponseHelper.Error<PaymentPlanResponseDto>($"Student with ID {dto.StudentId} not found");
+                }
+
+                // Check if student already has an active payment plan for the same course
+                if (dto.CourseId.HasValue)
+                {
+                    var existingPlan = await _context.PaymentPlans
+                        .AnyAsync(p => p.StudentId == dto.StudentId &&
+                                      p.CourseId == dto.CourseId.Value &&
+                                      p.Status == PaymentPlanStatus.Active);
+
+                    if (existingPlan)
+                    {
+                        return ResponseHelper.Error<PaymentPlanResponseDto>("Student already has an active payment plan for this course");
+                    }
                 }
 
                 // Validate course if provided
@@ -45,8 +72,15 @@ namespace JWTAuthAPI.Services
                     course = await _context.Courses.FindAsync(dto.CourseId.Value);
                     if (course == null)
                     {
-                        return ResponseHelper.Error<PaymentPlanResponseDto>("Course not found");
+                        return ResponseHelper.Error<PaymentPlanResponseDto>($"Course with ID {dto.CourseId.Value} not found");
                     }
+                }
+
+                // Validate due date
+                var firstDueDate = dto.FirstInstallmentDueDate ?? DateTime.UtcNow.AddDays(30);
+                if (firstDueDate < DateTime.UtcNow.Date)
+                {
+                    return ResponseHelper.Error<PaymentPlanResponseDto>("First installment due date cannot be in the past");
                 }
 
                 // Create payment plan
@@ -67,15 +101,15 @@ namespace JWTAuthAPI.Services
                 _context.PaymentPlans.Add(paymentPlan);
                 await _context.SaveChangesAsync();
 
-                // Create installments
+                // Create installments with proper amount distribution
                 var installmentAmount = Math.Round(dto.TotalAmount / dto.NumberOfInstallments, 2);
                 var remainingAmount = dto.TotalAmount;
-                var firstDueDate = dto.FirstInstallmentDueDate ?? DateTime.UtcNow.AddDays(30);
 
                 for (int i = 1; i <= dto.NumberOfInstallments; i++)
                 {
+                    // Last installment gets the remaining amount to handle rounding
                     var amount = i == dto.NumberOfInstallments ? remainingAmount : installmentAmount;
-                    
+
                     var installment = new Installment
                     {
                         PaymentPlanId = paymentPlan.PaymentPlanId,
@@ -113,8 +147,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating payment plan");
-                return ResponseHelper.Error<PaymentPlanResponseDto>("An error occurred while creating payment plan");
+                _logger.LogError(ex, "Error creating payment plan for StudentId: {StudentId}", dto.StudentId);
+                return ResponseHelper.Error<PaymentPlanResponseDto>($"An error occurred while creating payment plan: {ex.Message}");
             }
         }
 
@@ -138,8 +172,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting payment plan");
-                return ResponseHelper.Error<PaymentPlanResponseDto>("An error occurred while retrieving payment plan");
+                _logger.LogError(ex, "Error getting payment plan {PaymentPlanId}", paymentPlanId);
+                return ResponseHelper.Error<PaymentPlanResponseDto>($"An error occurred while retrieving payment plan: {ex.Message}");
             }
         }
 
@@ -160,8 +194,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting student payment plans");
-                return ResponseHelper.Error<List<PaymentPlanResponseDto>>("An error occurred while retrieving payment plans");
+                _logger.LogError(ex, "Error getting student payment plans for StudentId: {StudentId}", studentId);
+                return ResponseHelper.Error<List<PaymentPlanResponseDto>>($"An error occurred while retrieving payment plans: {ex.Message}");
             }
         }
 
@@ -182,8 +216,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting course payment plans");
-                return ResponseHelper.Error<List<PaymentPlanResponseDto>>("An error occurred while retrieving payment plans");
+                _logger.LogError(ex, "Error getting course payment plans for CourseId: {CourseId}", courseId);
+                return ResponseHelper.Error<List<PaymentPlanResponseDto>>($"An error occurred while retrieving payment plans: {ex.Message}");
             }
         }
 
@@ -224,8 +258,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating payment plan status");
-                return ResponseHelper.Error<PaymentPlanResponseDto>("An error occurred while updating payment plan status");
+                _logger.LogError(ex, "Error updating payment plan status {PaymentPlanId}", paymentPlanId);
+                return ResponseHelper.Error<PaymentPlanResponseDto>($"An error occurred while updating payment plan status: {ex.Message}");
             }
         }
 
@@ -250,8 +284,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting installment");
-                return ResponseHelper.Error<InstallmentResponseDto>("An error occurred while retrieving installment");
+                _logger.LogError(ex, "Error getting installment {InstallmentId}", installmentId);
+                return ResponseHelper.Error<InstallmentResponseDto>($"An error occurred while retrieving installment: {ex.Message}");
             }
         }
 
@@ -297,8 +331,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating payment plan");
-                return ResponseHelper.Error<PaymentPlanResponseDto>("An error occurred while updating payment plan");
+                _logger.LogError(ex, "Error updating payment plan {PaymentPlanId}", paymentPlanId);
+                return ResponseHelper.Error<PaymentPlanResponseDto>($"An error occurred while updating payment plan: {ex.Message}");
             }
         }
 
@@ -340,8 +374,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting payment plan");
-                return ResponseHelper.Error<string>("An error occurred while deleting payment plan");
+                _logger.LogError(ex, "Error deleting payment plan {PaymentPlanId}", paymentPlanId);
+                return ResponseHelper.Error<string>($"An error occurred while deleting payment plan: {ex.Message}");
             }
         }
 
@@ -349,6 +383,17 @@ namespace JWTAuthAPI.Services
         {
             try
             {
+                // Validate amount
+                if (dto.Amount <= 0)
+                {
+                    return ResponseHelper.Error<InstallmentResponseDto>("Payment amount must be greater than zero");
+                }
+
+                if (string.IsNullOrWhiteSpace(dto.PaymentMethod))
+                {
+                    return ResponseHelper.Error<InstallmentResponseDto>("Payment method is required");
+                }
+
                 var installment = await _context.Installments
                     .Include(i => i.PaymentPlan)
                         .ThenInclude(p => p!.Student)
@@ -356,12 +401,23 @@ namespace JWTAuthAPI.Services
 
                 if (installment == null)
                 {
-                    return ResponseHelper.Error<InstallmentResponseDto>("Installment not found");
+                    return ResponseHelper.Error<InstallmentResponseDto>($"Installment with ID {installmentId} not found");
                 }
 
                 if (installment.Status == InstallmentStatus.Paid)
                 {
-                    return ResponseHelper.Error<InstallmentResponseDto>("Installment already paid");
+                    return ResponseHelper.Error<InstallmentResponseDto>("Installment has already been paid");
+                }
+
+                if (installment.PaymentPlan == null)
+                {
+                    return ResponseHelper.Error<InstallmentResponseDto>("Payment plan not found for this installment");
+                }
+
+                // Validate payment amount matches installment amount
+                if (Math.Abs(dto.Amount - installment.Amount) > 0.01m)
+                {
+                    return ResponseHelper.Error<InstallmentResponseDto>($"Payment amount ({dto.Amount}) does not match installment amount ({installment.Amount})");
                 }
 
                 // Update installment
@@ -403,11 +459,30 @@ namespace JWTAuthAPI.Services
 
                 await _context.SaveChangesAsync();
 
-                // Complete admission after first payment
+                // Complete admission after first payment (directly update student status to avoid circular dependency)
                 if (installment.PaymentPlan?.Student?.Status == StudentStatus.PendingPayment)
                 {
-                    await _studentService.CompleteAdmissionAsync(installment.PaymentPlan.StudentId, processedBy);
-                    _logger.LogInformation("Student {StudentId} admission completed after first payment", installment.PaymentPlan.StudentId);
+                    var student = await _context.Students.FindAsync(installment.PaymentPlan.StudentId);
+                    if (student != null && student.Status == StudentStatus.PendingPayment)
+                    {
+                        student.Status = StudentStatus.Enrolled;
+                        student.AdmissionDate = DateTime.UtcNow;
+                        student.UpdatedAt = DateTime.UtcNow;
+                        await _context.SaveChangesAsync();
+
+                        _logger.LogInformation("Student {StudentId} admission completed after first payment", installment.PaymentPlan.StudentId);
+
+                        // Log admission completion
+                        await _auditService.LogAsync(
+                            ActionType.UPDATE,
+                            "Student",
+                            student.StudentId.ToString(),
+                            null,
+                            System.Text.Json.JsonSerializer.Serialize(new { student.StudentId, student.Status, student.AdmissionDate }),
+                            $"Student admission completed after payment",
+                            processedBy
+                        );
+                    }
                 }
 
                 // Log
@@ -425,8 +500,8 @@ namespace JWTAuthAPI.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error paying installment");
-                return ResponseHelper.Error<InstallmentResponseDto>("An error occurred while processing payment");
+                _logger.LogError(ex, "Error paying installment {InstallmentId}", installmentId);
+                return ResponseHelper.Error<InstallmentResponseDto>($"An error occurred while processing payment: {ex.Message}");
             }
         }
 
@@ -472,8 +547,8 @@ namespace JWTAuthAPI.Services
                 var upcomingDate = DateTime.UtcNow.AddDays(days);
                 var upcomingInstallments = await _context.Installments
                     .Include(i => i.PaymentPlan)
-                    .Where(i => i.Status == InstallmentStatus.Pending 
-                             && i.DueDate >= DateTime.UtcNow 
+                    .Where(i => i.Status == InstallmentStatus.Pending
+                             && i.DueDate >= DateTime.UtcNow
                              && i.DueDate <= upcomingDate)
                     .OrderBy(i => i.DueDate)
                     .ToListAsync();
