@@ -23,6 +23,7 @@ namespace JWTAuthAPI.Data
         public DbSet<Student> Students { get; set; } // DbSet for Student entities
         public DbSet<StudentDocument> StudentDocuments { get; set; } // DbSet for Student Documents
         public DbSet<Receipt> Receipts { get; set; } // DbSet for Receipts
+        public DbSet<Attendance> Attendances { get; set; } // DbSet for Attendance
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -94,6 +95,35 @@ namespace JWTAuthAPI.Data
                 .WithMany(b => b.Students)
                 .HasForeignKey(s => s.BatchId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // Configure Attendance indexes
+            modelBuilder.Entity<Attendance>()
+                .HasIndex(a => a.StudentId);
+
+            modelBuilder.Entity<Attendance>()
+                .HasIndex(a => a.BatchId);
+
+            modelBuilder.Entity<Attendance>()
+                .HasIndex(a => a.AttendanceDate);
+
+            // Configure unique constraint for student, batch, and date (prevent duplicates)
+            modelBuilder.Entity<Attendance>()
+                .HasIndex(a => new { a.StudentId, a.BatchId, a.AttendanceDate })
+                .IsUnique();
+
+            // Configure Attendance-Student relationship
+            modelBuilder.Entity<Attendance>()
+                .HasOne(a => a.Student)
+                .WithMany()
+                .HasForeignKey(a => a.StudentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure Attendance-Batch relationship
+            modelBuilder.Entity<Attendance>()
+                .HasOne(a => a.Batch)
+                .WithMany()
+                .HasForeignKey(a => a.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

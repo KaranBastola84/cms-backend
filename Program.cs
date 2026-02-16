@@ -92,6 +92,7 @@ builder.Services.AddScoped<JWTAuthAPI.Services.IBatchService, JWTAuthAPI.Service
 builder.Services.AddScoped<JWTAuthAPI.Services.IStudentService, JWTAuthAPI.Services.StudentService>(); // Register StudentService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IFileService, JWTAuthAPI.Services.FileService>(); // Register FileService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IReceiptService, JWTAuthAPI.Services.ReceiptService>(); // Register ReceiptService for dependency injection
+builder.Services.AddScoped<JWTAuthAPI.Services.IAttendanceService, JWTAuthAPI.Services.AttendanceService>(); // Register AttendanceService for dependency injection
 builder.Services.AddScoped(typeof(Microsoft.AspNetCore.Identity.IPasswordHasher<>), typeof(Microsoft.AspNetCore.Identity.PasswordHasher<>)); // Register password hasher for students
 builder.Services.AddHttpContextAccessor(); // Required for AuditService to access HTTP context
 
