@@ -24,7 +24,7 @@ namespace JWTAuthAPI.Services
             {
                 var now = DateTime.UtcNow;
                 var weekAgo = now.AddDays(-7);
-                var monthStart = new DateTime(now.Year, now.Month, 1);
+                var monthStart = DateTime.SpecifyKind(new DateTime(now.Year, now.Month, 1), DateTimeKind.Utc);
 
                 // Get student statistics
                 var students = await _context.Students.ToListAsync();
@@ -37,7 +37,7 @@ namespace JWTAuthAPI.Services
                     Completed = students.Count(s => s.Status == StudentStatus.Completed),
                     Dropped = students.Count(s => s.Status == StudentStatus.Dropped),
                     Suspended = students.Count(s => s.Status == StudentStatus.Suspended),
-                    NewToday = students.Count(s => s.CreatedAt.Date == now.Date),
+                    NewToday = students.Count(s => s.CreatedAt.Date == DateTime.SpecifyKind(now.Date, DateTimeKind.Utc)),
                     NewThisWeek = students.Count(s => s.CreatedAt >= weekAgo),
                     NewThisMonth = students.Count(s => s.CreatedAt >= monthStart)
                 };
@@ -108,7 +108,7 @@ namespace JWTAuthAPI.Services
             {
                 var now = DateTime.UtcNow;
                 var weekAgo = now.AddDays(-7);
-                var monthStart = new DateTime(now.Year, now.Month, 1);
+                var monthStart = DateTime.SpecifyKind(new DateTime(now.Year, now.Month, 1), DateTimeKind.Utc);
 
                 // Get all payment plans with installments
                 var paymentPlans = await _context.PaymentPlans
@@ -121,11 +121,12 @@ namespace JWTAuthAPI.Services
                 var paidInstallments = allInstallments.Where(i => i.Status == InstallmentStatus.Paid).ToList();
 
                 // Revenue metrics
-                var todayRevenue = paidInstallments.Where(i => i.PaidDate.HasValue && i.PaidDate.Value.Date == now.Date);
+                var todayDate = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+                var todayRevenue = paidInstallments.Where(i => i.PaidDate.HasValue && i.PaidDate.Value.Date == todayDate);
                 var weekRevenue = paidInstallments.Where(i => i.PaidDate.HasValue && i.PaidDate >= weekAgo);
                 var monthRevenue = paidInstallments.Where(i => i.PaidDate.HasValue && i.PaidDate >= monthStart);
                 var distinctStudentCount = paymentPlans.Select(p => p.StudentId).Distinct().Count();
-                
+
                 var revenueMetrics = new RevenueMetrics
                 {
                     TotalRevenue = paidInstallments.Any() ? paidInstallments.Sum(i => i.Amount) : 0,
@@ -239,8 +240,8 @@ namespace JWTAuthAPI.Services
                     .Select(s => s.CourseId!.Value)
                     .Distinct()
                     .ToList();
-                    
-                var courses = courseIds.Any() 
+
+                var courses = courseIds.Any()
                     ? await _context.Courses.Where(c => courseIds.Contains(c.CourseId)).ToDictionaryAsync(c => c.CourseId, c => c)
                     : new Dictionary<int, Course>();
 
@@ -249,8 +250,8 @@ namespace JWTAuthAPI.Services
                     StudentId = s.StudentId,
                     Name = s.Name,
                     Email = s.Email,
-                    CourseName = s.CourseId.HasValue && s.CourseId.Value > 0 && courses.ContainsKey(s.CourseId.Value) 
-                        ? courses[s.CourseId.Value].Name 
+                    CourseName = s.CourseId.HasValue && s.CourseId.Value > 0 && courses.ContainsKey(s.CourseId.Value)
+                        ? courses[s.CourseId.Value].Name
                         : "N/A",
                     Status = s.Status.ToString(),
                     CreatedAt = s.CreatedAt
@@ -519,7 +520,7 @@ namespace JWTAuthAPI.Services
                     .ToListAsync();
 
                 var allCourses = await _context.Courses.ToDictionaryAsync(c => c.CourseId, c => c);
-                
+
                 var paymentPlans = await _context.PaymentPlans
                     .Include(p => p.Course)
                     .ToListAsync();
@@ -603,7 +604,7 @@ namespace JWTAuthAPI.Services
                         Year = g.Key.Year,
                         Month = g.Key.Month,
                         MonthName = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(g.Key.Month).Substring(0, 3),
-                        Collected = g.Where(i => i.Status == InstallmentStatus.Paid).Any() 
+                        Collected = g.Where(i => i.Status == InstallmentStatus.Paid).Any()
                             ? g.Where(i => i.Status == InstallmentStatus.Paid).Sum(i => i.Amount) : 0,
                         Outstanding = g.Where(i => i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue).Any()
                             ? g.Where(i => i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue).Sum(i => i.Amount) : 0,
@@ -636,9 +637,9 @@ namespace JWTAuthAPI.Services
             try
             {
                 var now = DateTime.UtcNow;
-                var today = now.Date;
+                var today = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
                 var weekAgo = now.AddDays(-7);
-                var monthStart = new DateTime(now.Year, now.Month, 1);
+                var monthStart = DateTime.SpecifyKind(new DateTime(now.Year, now.Month, 1), DateTimeKind.Utc);
 
                 // Today's attendance
                 var todayAttendance = await _context.Attendances

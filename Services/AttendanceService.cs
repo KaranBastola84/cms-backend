@@ -25,8 +25,12 @@ namespace JWTAuthAPI.Services
         {
             try
             {
+                // Normalize date to UTC
+                var attendanceDate = DateTime.SpecifyKind(dto.AttendanceDate.Date, DateTimeKind.Utc);
+                var todayUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date, DateTimeKind.Utc);
+
                 // Validate date - cannot mark attendance for future dates
-                if (dto.AttendanceDate.Date > DateTime.UtcNow.Date)
+                if (attendanceDate > todayUtc)
                 {
                     return ResponseHelper.Error<AttendanceResponseDto>("Cannot mark attendance for future dates");
                 }
@@ -55,7 +59,7 @@ namespace JWTAuthAPI.Services
                 var existingAttendance = await _context.Attendances
                     .FirstOrDefaultAsync(a => a.StudentId == dto.StudentId
                                            && a.BatchId == dto.BatchId
-                                           && a.AttendanceDate.Date == dto.AttendanceDate.Date);
+                                           && a.AttendanceDate.Date == attendanceDate);
 
                 if (existingAttendance != null)
                 {
@@ -67,7 +71,7 @@ namespace JWTAuthAPI.Services
                 {
                     StudentId = dto.StudentId,
                     BatchId = dto.BatchId,
-                    AttendanceDate = dto.AttendanceDate.Date,
+                    AttendanceDate = attendanceDate,
                     Status = dto.Status,
                     CheckInTime = dto.CheckInTime,
                     CheckOutTime = dto.CheckOutTime,
@@ -108,8 +112,12 @@ namespace JWTAuthAPI.Services
         {
             try
             {
+                // Normalize date to UTC
+                var attendanceDate = DateTime.SpecifyKind(dto.AttendanceDate.Date, DateTimeKind.Utc);
+                var todayUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date, DateTimeKind.Utc);
+
                 // Validate date
-                if (dto.AttendanceDate.Date > DateTime.UtcNow.Date)
+                if (attendanceDate > todayUtc)
                 {
                     return ResponseHelper.Error<List<AttendanceResponseDto>>("Cannot mark attendance for future dates");
                 }
@@ -144,7 +152,7 @@ namespace JWTAuthAPI.Services
                     var existingAttendance = await _context.Attendances
                         .FirstOrDefaultAsync(a => a.StudentId == studentDto.StudentId
                                                && a.BatchId == dto.BatchId
-                                               && a.AttendanceDate.Date == dto.AttendanceDate.Date);
+                                               && a.AttendanceDate.Date == attendanceDate);
 
                     if (existingAttendance != null)
                     {
@@ -157,7 +165,7 @@ namespace JWTAuthAPI.Services
                     {
                         StudentId = studentDto.StudentId,
                         BatchId = dto.BatchId,
-                        AttendanceDate = dto.AttendanceDate.Date,
+                        AttendanceDate = attendanceDate,
                         Status = studentDto.Status,
                         CheckInTime = studentDto.CheckInTime,
                         CheckOutTime = studentDto.CheckOutTime,
@@ -238,10 +246,13 @@ namespace JWTAuthAPI.Services
         {
             try
             {
+                // Normalize date to UTC
+                var attendanceDate = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
+
                 var attendances = await _context.Attendances
                     .Include(a => a.Student)
                     .Include(a => a.Batch)
-                    .Where(a => a.BatchId == batchId && a.AttendanceDate.Date == date.Date)
+                    .Where(a => a.BatchId == batchId && a.AttendanceDate.Date == attendanceDate)
                     .OrderBy(a => a.Student!.Name)
                     .ToListAsync();
 
