@@ -9,6 +9,7 @@ namespace JWTAuthAPI.Models
         public string BatchName { get; set; } = string.Empty;
         public DateTime AttendanceDate { get; set; }
         public AttendanceStatus Status { get; set; }
+        public string StatusText { get; set; } = string.Empty;
         public TimeSpan? CheckInTime { get; set; }
         public TimeSpan? CheckOutTime { get; set; }
         public string? Remarks { get; set; }
