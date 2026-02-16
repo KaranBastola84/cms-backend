@@ -10,17 +10,20 @@ namespace JWTAuthAPI.Services
         private readonly ApplicationDbContext _context;
         private readonly IAuditService _auditService;
         private readonly IReceiptService _receiptService;
+        private readonly IStudentService _studentService;
         private readonly ILogger<PaymentPlanService> _logger;
 
         public PaymentPlanService(
             ApplicationDbContext context,
             IAuditService auditService,
             IReceiptService receiptService,
+            IStudentService studentService,
             ILogger<PaymentPlanService> logger)
         {
             _context = context;
             _auditService = auditService;
             _receiptService = receiptService;
+            _studentService = studentService;
             _logger = logger;
         }
 
@@ -400,6 +403,13 @@ namespace JWTAuthAPI.Services
 
                 await _context.SaveChangesAsync();
 
+                // Complete admission after first payment
+                if (installment.PaymentPlan?.Student?.Status == StudentStatus.PendingPayment)
+                {
+                    await _studentService.CompleteAdmissionAsync(installment.PaymentPlan.StudentId, processedBy);
+                    _logger.LogInformation("Student {StudentId} admission completed after first payment", installment.PaymentPlan.StudentId);
+                }
+
                 // Log
                 await _auditService.LogAsync(
                     ActionType.UPDATE,
@@ -407,7 +417,7 @@ namespace JWTAuthAPI.Services
                     installment.InstallmentId.ToString(),
                     null,
                     System.Text.Json.JsonSerializer.Serialize(installment),
-                    $"Installment paid"
+                    $"Installment paid via {dto.PaymentMethod}"
                 );
 
                 var response = MapInstallmentToDto(installment);

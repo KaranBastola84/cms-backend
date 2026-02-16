@@ -5,6 +5,7 @@ namespace JWTAuthAPI.Services
     public interface IStudentService
     {
         Task<ApiResponse<StudentDto>> CreateStudentAsync(CreateStudentDto createDto, string createdBy);
+        Task<ApiResponse<string>> CompleteAdmissionAsync(int studentId, string completedBy);
         Task<ApiResponse<StudentDto>> GetStudentByIdAsync(int studentId);
         Task<ApiResponse<List<StudentDto>>> GetAllStudentsAsync();
         Task<ApiResponse<List<StudentDto>>> GetStudentsByStatusAsync(StudentStatus status);
