@@ -743,7 +743,7 @@ namespace JWTAuthAPI.Services
             }
         }
 
-        public async Task<ApiResponse<NotificationResponseDto>> GetNotificationsAsync(int limit = 50)
+        public async Task<ApiResponse<NotificationResponseDto>> GetNotificationsAsync(int userId, int limit = 50)
         {
             try
             {
@@ -1034,13 +1034,26 @@ namespace JWTAuthAPI.Services
                     .Take(limit)
                     .ToList();
 
+                // Get read notifications for this user
+                var notificationKeys = sortedNotifications.Select(n => n.Id).ToList();
+                var readNotifications = await _context.UserNotificationReads
+                    .Where(r => r.UserId == userId && notificationKeys.Contains(r.NotificationKey))
+                    .Select(r => r.NotificationKey)
+                    .ToListAsync();
+
+                // Mark notifications as read/unread
+                foreach (var notification in sortedNotifications)
+                {
+                    notification.IsRead = readNotifications.Contains(notification.Id);
+                }
+
                 // Calculate counts
                 var response = new NotificationResponseDto
                 {
                     Notifications = sortedNotifications,
-                    UnreadCount = sortedNotifications.Count, // In real app, track read status in DB
-                    CriticalCount = sortedNotifications.Count(n => n.Severity == "critical"),
-                    WarningCount = sortedNotifications.Count(n => n.Severity == "warning")
+                    UnreadCount = sortedNotifications.Count(n => !n.IsRead),
+                    CriticalCount = sortedNotifications.Count(n => n.Severity == "critical" && !n.IsRead),
+                    WarningCount = sortedNotifications.Count(n => n.Severity == "warning" && !n.IsRead)
                 };
 
                 return ResponseHelper.Success(response);
@@ -1049,6 +1062,189 @@ namespace JWTAuthAPI.Services
             {
                 _logger.LogError(ex, "Error getting notifications");
                 return ResponseHelper.Error<NotificationResponseDto>($"An error occurred: {ex.Message}");
+            }
+        }
+
+        public async Task<ApiResponse<bool>> MarkNotificationAsReadAsync(int userId, string notificationKey)
+        {
+            try
+            {
+                // Check if already marked as read
+                var existing = await _context.UserNotificationReads
+                    .FirstOrDefaultAsync(r => r.UserId == userId && r.NotificationKey == notificationKey);
+
+                if (existing != null)
+                {
+                    return ResponseHelper.Success(true, "Notification already marked as read");
+                }
+
+                // Parse notification key to get type and related ID
+                var parts = notificationKey.Split('-');
+                if (parts.Length < 3)
+                {
+                    return ResponseHelper.Error<bool>("Invalid notification key format");
+                }
+
+                var notificationType = parts[0];
+                if (!int.TryParse(parts[2], out int relatedId))
+                {
+                    return ResponseHelper.Error<bool>("Invalid notification key format");
+                }
+
+                // Create new read record
+                var readRecord = new UserNotificationRead
+                {
+                    UserId = userId,
+                    NotificationType = notificationType,
+                    RelatedId = relatedId,
+                    NotificationKey = notificationKey,
+                    ReadAt = DateTime.UtcNow
+                };
+
+                _context.UserNotificationReads.Add(readRecord);
+                await _context.SaveChangesAsync();
+
+                return ResponseHelper.Success(true, "Notification marked as read");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error marking notification as read");
+                return ResponseHelper.Error<bool>($"An error occurred: {ex.Message}");
+            }
+        }
+
+        public async Task<ApiResponse<bool>> MarkAllNotificationsAsReadAsync(int userId)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                var today = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+                var yesterday = today.AddDays(-1);
+
+                // Get all current notification keys (same logic as GetNotificationsAsync but just IDs)
+                var notificationKeys = new List<string>();
+
+                // 1. Critical payments
+                var criticalPayments = await _context.Installments
+                    .Include(i => i.PaymentPlan)
+                    .Where(i => (i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue)
+                               && i.DueDate < now.AddDays(-30))
+                    .GroupBy(i => i.PaymentPlan!.StudentId)
+                    .Select(g => g.Key)
+                    .Take(10)
+                    .ToListAsync();
+                
+                notificationKeys.AddRange(criticalPayments.Select(id => $"payment-critical-{id}"));
+
+                // 2. Warning payments
+                var warningPayments = await _context.Installments
+                    .Include(i => i.PaymentPlan)
+                    .Where(i => (i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue)
+                               && i.DueDate < now.AddDays(-7)
+                               && i.DueDate >= now.AddDays(-30))
+                    .GroupBy(i => i.PaymentPlan!.StudentId)
+                    .Select(g => g.Key)
+                    .Take(10)
+                    .ToListAsync();
+                
+                notificationKeys.AddRange(warningPayments.Select(id => $"payment-warning-{id}"));
+
+                // 3. New inquiries
+                var newInquiries = await _context.Inquiries
+                    .Where(i => i.CreatedAt >= yesterday)
+                    .Select(i => i.Id)
+                    .Take(20)
+                    .ToListAsync();
+                
+                notificationKeys.AddRange(newInquiries.Select(id => $"inquiry-new-{id}"));
+
+                // 4. Pending inquiries
+                var pendingInquiries = await _context.Inquiries
+                    .Where(i => (i.Status == InquiryStatus.Pending || i.Status == InquiryStatus.InProgress)
+                               && i.CreatedAt < now.AddDays(-3)
+                               && i.CreatedAt >= now.AddDays(-30))
+                    .Select(i => i.Id)
+                    .Take(10)
+                    .ToListAsync();
+                
+                notificationKeys.AddRange(pendingInquiries.Select(id => $"inquiry-pending-{id}"));
+
+                // 5. Critical attendance (simplified - just get student IDs with issues)
+                var attendanceStudents = await _context.Attendances
+                    .Where(a => a.AttendanceDate >= now.AddDays(-30))
+                    .GroupBy(a => a.StudentId)
+                    .Select(g => new
+                    {
+                        StudentId = g.Key,
+                        TotalDays = g.Count(),
+                        PresentDays = g.Count(a => a.Status == AttendanceStatus.Present)
+                    })
+                    .Where(x => x.TotalDays > 0 && (decimal)x.PresentDays / x.TotalDays < 0.75m)
+                    .Select(x => x.StudentId)
+                    .Take(10)
+                    .ToListAsync();
+                
+                notificationKeys.AddRange(attendanceStudents.Select(id => $"attendance-critical-{id}"));
+
+                // 6. New admissions
+                var newStudents = await _context.Students
+                    .Where(s => s.CreatedAt >= today)
+                    .Select(s => s.StudentId)
+                    .Take(20)
+                    .ToListAsync();
+                
+                notificationKeys.AddRange(newStudents.Select(id => $"admission-{id}"));
+
+                // 7. Batch starting soon
+                var upcomingBatches = await _context.Batches
+                    .Where(b => b.StartDate > now && b.StartDate <= now.AddDays(7))
+                    .Select(b => b.BatchId)
+                    .ToListAsync();
+                
+                notificationKeys.AddRange(upcomingBatches.Select(id => $"batch-starting-{id}"));
+
+                // 8. Recent payments
+                var recentPayments = await _context.Receipts
+                    .Where(r => r.PaymentDate.HasValue && r.PaymentDate >= today)
+                    .Select(r => r.ReceiptId)
+                    .Take(10)
+                    .ToListAsync();
+                
+                notificationKeys.AddRange(recentPayments.Select(id => $"payment-received-{id}"));
+
+                // Get already read notifications
+                var alreadyRead = await _context.UserNotificationReads
+                    .Where(r => r.UserId == userId && notificationKeys.Contains(r.NotificationKey))
+                    .Select(r => r.NotificationKey)
+                    .ToListAsync();
+
+                // Mark unread ones as read
+                var toMarkAsRead = notificationKeys.Except(alreadyRead).Distinct().ToList();
+                
+                foreach (var key in toMarkAsRead)
+                {
+                    var parts = key.Split('-');
+                    if (parts.Length >= 3 && int.TryParse(parts[2], out int relatedId))
+                    {
+                        _context.UserNotificationReads.Add(new UserNotificationRead
+                        {
+                            UserId = userId,
+                            NotificationType = parts[0],
+                            RelatedId = relatedId,
+                            NotificationKey = key,
+                            ReadAt = DateTime.UtcNow
+                        });
+                    }
+                }
+
+                await _context.SaveChangesAsync();
+
+                return ResponseHelper.Success(true, $"Marked {toMarkAsRead.Count} notifications as read");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error marking all notifications as read");
+                return ResponseHelper.Error<bool>($"An error occurred: {ex.Message}");
             }
         }
     }

@@ -3,6 +3,7 @@ using JWTAuthAPI.Models;
 using JWTAuthAPI.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace JWTAuthAPI.Controllers
 {
@@ -156,13 +157,73 @@ namespace JWTAuthAPI.Controllers
                     return BadRequest(ResponseHelper.Error<NotificationResponseDto>("Limit must be between 1 and 100", 400));
                 }
 
-                var result = await _dashboardService.GetNotificationsAsync(limit);
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(ResponseHelper.Error<NotificationResponseDto>("User ID not found in token", 401));
+                }
+
+                var result = await _dashboardService.GetNotificationsAsync(userId, limit);
                 return Ok(result);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in GetNotifications endpoint");
                 return StatusCode(500, ResponseHelper.Error<NotificationResponseDto>("An error occurred while fetching notifications", 500));
+            }
+        }
+
+        /// <summary>
+        /// Mark a single notification as read
+        /// </summary>
+        /// <param name="notificationKey">The notification key/ID to mark as read</param>
+        [HttpPost("notifications/mark-read")]
+        public async Task<ActionResult<ApiResponse<bool>>> MarkNotificationAsRead([FromBody] string notificationKey)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(notificationKey))
+                {
+                    return BadRequest(ResponseHelper.Error<bool>("Notification key is required", 400));
+                }
+
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(ResponseHelper.Error<bool>("User ID not found in token", 401));
+                }
+
+                var result = await _dashboardService.MarkNotificationAsReadAsync(userId, notificationKey);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in MarkNotificationAsRead endpoint");
+                return StatusCode(500, ResponseHelper.Error<bool>("An error occurred while marking notification as read", 500));
+            }
+        }
+
+        /// <summary>
+        /// Mark all notifications as read for the current user
+        /// </summary>
+        [HttpPost("notifications/mark-all-read")]
+        public async Task<ActionResult<ApiResponse<bool>>> MarkAllNotificationsAsRead()
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(ResponseHelper.Error<bool>("User ID not found in token", 401));
+                }
+
+                var result = await _dashboardService.MarkAllNotificationsAsReadAsync(userId);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in MarkAllNotificationsAsRead endpoint");
+                return StatusCode(500, ResponseHelper.Error<bool>("An error occurred while marking all notifications as read", 500));
             }
         }
     }

@@ -29,6 +29,7 @@ namespace JWTAuthAPI.Data
         public DbSet<StripePayment> StripePayments { get; set; } // DbSet for Stripe Payments
         public DbSet<FeeStructure> FeeStructures { get; set; } // DbSet for Fee Structures
         public DbSet<Transaction> Transactions { get; set; } // DbSet for Transactions
+        public DbSet<UserNotificationRead> UserNotificationReads { get; set; } // DbSet for User Notification Read Status
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -129,6 +130,17 @@ namespace JWTAuthAPI.Data
                 .WithMany()
                 .HasForeignKey(a => a.BatchId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure UserNotificationRead indexes
+            modelBuilder.Entity<UserNotificationRead>()
+                .HasIndex(n => n.UserId);
+
+            modelBuilder.Entity<UserNotificationRead>()
+                .HasIndex(n => n.NotificationKey);
+
+            modelBuilder.Entity<UserNotificationRead>()
+                .HasIndex(n => new { n.UserId, n.NotificationKey })
+                .IsUnique();
         }
     }
 }
