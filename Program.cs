@@ -84,6 +84,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+// Configure Stripe Settings
+builder.Services.Configure<JWTAuthAPI.Models.StripeSettings>(builder.Configuration.GetSection("StripeSettings"));
+Stripe.StripeConfiguration.ApiKey = builder.Configuration["StripeSettings:SecretKey"];
+
 builder.Services.AddScoped<JWTAuthAPI.Services.JwtService>(); // Register JwtService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IEmailService, JWTAuthAPI.Services.EmailService>(); // Register EmailService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IAuditService, JWTAuthAPI.Services.AuditService>(); // Register AuditService for dependency injection
@@ -93,6 +97,11 @@ builder.Services.AddScoped<JWTAuthAPI.Services.IStudentService, JWTAuthAPI.Servi
 builder.Services.AddScoped<JWTAuthAPI.Services.IFileService, JWTAuthAPI.Services.FileService>(); // Register FileService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IReceiptService, JWTAuthAPI.Services.ReceiptService>(); // Register ReceiptService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IAttendanceService, JWTAuthAPI.Services.AttendanceService>(); // Register AttendanceService for dependency injection
+// Payment & Finance Services
+builder.Services.AddScoped<JWTAuthAPI.Services.IPaymentPlanService, JWTAuthAPI.Services.PaymentPlanService>(); // Register PaymentPlanService
+builder.Services.AddScoped<JWTAuthAPI.Services.IStripePaymentService, JWTAuthAPI.Services.StripePaymentService>(); // Register StripePaymentService
+builder.Services.AddScoped<JWTAuthAPI.Services.IFeeStructureService, JWTAuthAPI.Services.FeeStructureService>(); // Register FeeStructureService
+builder.Services.AddScoped<JWTAuthAPI.Services.IFinancialReportService, JWTAuthAPI.Services.FinancialReportService>(); // Register FinancialReportService
 builder.Services.AddScoped(typeof(Microsoft.AspNetCore.Identity.IPasswordHasher<>), typeof(Microsoft.AspNetCore.Identity.PasswordHasher<>)); // Register password hasher for students
 builder.Services.AddHttpContextAccessor(); // Required for AuditService to access HTTP context
 
