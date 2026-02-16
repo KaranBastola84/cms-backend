@@ -56,7 +56,8 @@ namespace JWTAuthAPI.Models
 
     public enum StudentStatus
     {
-        Enrolled,
+        PendingPayment,  // Student registered but awaiting first payment
+        Enrolled,         // Student admitted and enrolled (after payment)
         Active,
         Completed,
         Dropped,

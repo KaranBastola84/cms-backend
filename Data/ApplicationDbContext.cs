@@ -24,6 +24,11 @@ namespace JWTAuthAPI.Data
         public DbSet<StudentDocument> StudentDocuments { get; set; } // DbSet for Student Documents
         public DbSet<Receipt> Receipts { get; set; } // DbSet for Receipts
         public DbSet<Attendance> Attendances { get; set; } // DbSet for Attendance
+        public DbSet<PaymentPlan> PaymentPlans { get; set; } // DbSet for Payment Plans
+        public DbSet<Installment> Installments { get; set; } // DbSet for Installments
+        public DbSet<StripePayment> StripePayments { get; set; } // DbSet for Stripe Payments
+        public DbSet<FeeStructure> FeeStructures { get; set; } // DbSet for Fee Structures
+        public DbSet<Transaction> Transactions { get; set; } // DbSet for Transactions
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

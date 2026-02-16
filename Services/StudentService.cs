@@ -62,8 +62,8 @@ namespace JWTAuthAPI.Services
                     BatchId = createDto.BatchId,
                     Address = createDto.Address,
                     EmergencyContact = createDto.EmergencyContact,
-                    Status = StudentStatus.Enrolled,
-                    AdmissionDate = createDto.AdmissionDate ?? DateTime.UtcNow,
+                    Status = StudentStatus.PendingPayment,  // Changed: Student pending until first payment
+                    AdmissionDate = null,  // Will be set when payment is made
                     FeesTotal = createDto.FeesTotal ?? 0,
                     FeesPaid = createDto.FeesPaid ?? 0,
                     CreatedAt = DateTime.UtcNow,
@@ -87,6 +87,59 @@ namespace JWTAuthAPI.Services
                     _logger.LogWarning(emailEx, "Failed to send credentials email to {Email}", student.Email);
                 }
 
+                // Note: Admission confirmation email will be sent after payment is completed
+
+                // Log the action
+                await _auditService.LogAsync(
+                    ActionType.CREATE,
+                    "Student",
+                    student.StudentId.ToString(),
+                    null,
+                    $"Created new student (pending payment): {student.Name} ({student.Email})",
+                    $"Temporary password sent to email. Awaiting payment confirmation.",
+                    createdBy
+                );
+
+                await transaction.CommitAsync();
+
+                var studentDto = MapToDto(student);
+                return ResponseHelper.Success(studentDto, "Student registered successfully. Please complete payment to confirm admission. Login credentials sent to email.");
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error creating student");
+                return ResponseHelper.Error<StudentDto>("An error occurred while creating the student");
+            }
+        }
+
+        // Complete admission after first payment
+        public async Task<ApiResponse<string>> CompleteAdmissionAsync(int studentId, string completedBy)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var student = await _context.Students.FindAsync(studentId);
+
+                if (student == null)
+                {
+                    return ResponseHelper.Error<string>("Student not found");
+                }
+
+                if (student.Status != StudentStatus.PendingPayment)
+                {
+                    return ResponseHelper.Success("Student admission already completed");
+                }
+
+                var oldData = System.Text.Json.JsonSerializer.Serialize(student);
+
+                // Update student status to Enrolled and set admission date
+                student.Status = StudentStatus.Enrolled;
+                student.AdmissionDate = DateTime.UtcNow;
+                student.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
                 // Send admission confirmation email
                 try
                 {
@@ -99,25 +152,24 @@ namespace JWTAuthAPI.Services
 
                 // Log the action
                 await _auditService.LogAsync(
-                    ActionType.CREATE,
+                    ActionType.UPDATE,
                     "Student",
                     student.StudentId.ToString(),
-                    null,
-                    $"Created new student: {student.Name} ({student.Email})",
-                    $"Temporary password sent to email",
-                    createdBy
+                    oldData,
+                    System.Text.Json.JsonSerializer.Serialize(student),
+                    $"Student admission completed after payment: {student.Name}",
+                    completedBy
                 );
 
                 await transaction.CommitAsync();
 
-                var studentDto = MapToDto(student);
-                return ResponseHelper.Success(studentDto, "Student created successfully. Login credentials sent to email.");
+                return ResponseHelper.Success($"Admission completed successfully for {student.Name}");
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                _logger.LogError(ex, "Error creating student");
-                return ResponseHelper.Error<StudentDto>("An error occurred while creating the student");
+                _logger.LogError(ex, "Error completing student admission");
+                return ResponseHelper.Error<string>("An error occurred while completing admission");
             }
         }
 

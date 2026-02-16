@@ -192,7 +192,7 @@ namespace JWTAuthAPI.Services
                     _logger.LogWarning($"Bulk attendance marked with errors: {string.Join("; ", errors)}");
                 }
 
-                return ResponseHelper.Success(responses, errors.Any() ? string.Join("; ", errors) : null);
+                return ResponseHelper.Success(responses, errors.Any() ? string.Join("; ", errors) : string.Empty);
             }
             catch (Exception ex)
             {
