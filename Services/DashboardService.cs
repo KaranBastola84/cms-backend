@@ -1133,7 +1133,7 @@ namespace JWTAuthAPI.Services
                     .Select(g => g.Key)
                     .Take(10)
                     .ToListAsync();
-                
+
                 notificationKeys.AddRange(criticalPayments.Select(id => $"payment-critical-{id}"));
 
                 // 2. Warning payments
@@ -1146,7 +1146,7 @@ namespace JWTAuthAPI.Services
                     .Select(g => g.Key)
                     .Take(10)
                     .ToListAsync();
-                
+
                 notificationKeys.AddRange(warningPayments.Select(id => $"payment-warning-{id}"));
 
                 // 3. New inquiries
@@ -1155,7 +1155,7 @@ namespace JWTAuthAPI.Services
                     .Select(i => i.Id)
                     .Take(20)
                     .ToListAsync();
-                
+
                 notificationKeys.AddRange(newInquiries.Select(id => $"inquiry-new-{id}"));
 
                 // 4. Pending inquiries
@@ -1166,7 +1166,7 @@ namespace JWTAuthAPI.Services
                     .Select(i => i.Id)
                     .Take(10)
                     .ToListAsync();
-                
+
                 notificationKeys.AddRange(pendingInquiries.Select(id => $"inquiry-pending-{id}"));
 
                 // 5. Critical attendance (simplified - just get student IDs with issues)
@@ -1183,7 +1183,7 @@ namespace JWTAuthAPI.Services
                     .Select(x => x.StudentId)
                     .Take(10)
                     .ToListAsync();
-                
+
                 notificationKeys.AddRange(attendanceStudents.Select(id => $"attendance-critical-{id}"));
 
                 // 6. New admissions
@@ -1192,7 +1192,7 @@ namespace JWTAuthAPI.Services
                     .Select(s => s.StudentId)
                     .Take(20)
                     .ToListAsync();
-                
+
                 notificationKeys.AddRange(newStudents.Select(id => $"admission-{id}"));
 
                 // 7. Batch starting soon
@@ -1200,7 +1200,7 @@ namespace JWTAuthAPI.Services
                     .Where(b => b.StartDate > now && b.StartDate <= now.AddDays(7))
                     .Select(b => b.BatchId)
                     .ToListAsync();
-                
+
                 notificationKeys.AddRange(upcomingBatches.Select(id => $"batch-starting-{id}"));
 
                 // 8. Recent payments
@@ -1209,7 +1209,7 @@ namespace JWTAuthAPI.Services
                     .Select(r => r.ReceiptId)
                     .Take(10)
                     .ToListAsync();
-                
+
                 notificationKeys.AddRange(recentPayments.Select(id => $"payment-received-{id}"));
 
                 // Get already read notifications
@@ -1220,7 +1220,7 @@ namespace JWTAuthAPI.Services
 
                 // Mark unread ones as read
                 var toMarkAsRead = notificationKeys.Except(alreadyRead).Distinct().ToList();
-                
+
                 foreach (var key in toMarkAsRead)
                 {
                     var parts = key.Split('-');
