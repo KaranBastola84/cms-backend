@@ -195,12 +195,6 @@ namespace JWTAuthAPI.Controllers
                 return NotFound(ResponseHelper.Error<object>("Inquiry not found", 404));
             }
 
-            // Check if inquiry already converted
-            if (inquiry.ConvertedToStudentId.HasValue)
-            {
-                return BadRequest(ResponseHelper.Error<object>("Cannot update status of converted inquiry. Inquiry already converted to student."));
-            }
-
             // Store old values for audit log
             var oldStatus = inquiry.Status;
             var oldNotes = inquiry.ResponseNotes;
@@ -249,12 +243,6 @@ namespace JWTAuthAPI.Controllers
             if (inquiry == null)
             {
                 return NotFound(ResponseHelper.Error<object>("Inquiry not found", 404));
-            }
-
-            // Check if inquiry already converted
-            if (inquiry.ConvertedToStudentId.HasValue)
-            {
-                return BadRequest(ResponseHelper.Error<object>("Cannot assign converted inquiry. Inquiry already converted to student."));
             }
 
             // Verify the assigned user exists and is Staff or Admin
@@ -404,129 +392,12 @@ namespace JWTAuthAPI.Controllers
             return Ok(ResponseHelper.Success(followUpNotes, "Follow-up notes retrieved successfully"));
         }
 
-        // POST: api/inquiry/{id}/convert-to-student (Admin/Staff only - Convert inquiry to student)
-        [HttpPost("{id}/convert-to-student")]
-        [Authorize(Roles = "Admin,Staff")]
-        public async Task<IActionResult> ConvertToStudent(int id, [FromBody] ConvertInquiryDto convertDto)
-        {
-            var inquiry = await _context.Inquiries.FindAsync(id);
-
-            if (inquiry == null)
-            {
-                return NotFound(ResponseHelper.Error<object>("Inquiry not found", 404));
-            }
-
-            // Check if inquiry already converted
-            if (inquiry.ConvertedToStudentId.HasValue)
-            {
-                return BadRequest(ResponseHelper.Error<object>($"Inquiry already converted to student (ID: {inquiry.ConvertedToStudentId})"));
-            }
-
-            // Check if email already exists as student
-            var existingStudent = await _context.Students.FirstOrDefaultAsync(s => s.Email == inquiry.Email);
-            if (existingStudent != null)
-            {
-                return BadRequest(ResponseHelper.Error<object>("A student with this email already exists"));
-            }
-
-            // Validate CourseId if provided
-            if (convertDto.CourseId.HasValue)
-            {
-                var courseExists = await _context.Courses.AnyAsync(c => c.CourseId == convertDto.CourseId.Value);
-                if (!courseExists)
-                {
-                    return BadRequest(ResponseHelper.Error<object>($"Course with ID {convertDto.CourseId} does not exist"));
-                }
-            }
-
-            // Validate BatchId if provided
-            if (convertDto.BatchId.HasValue)
-            {
-                var batchExists = await _context.Batches.AnyAsync(b => b.BatchId == convertDto.BatchId.Value);
-                if (!batchExists)
-                {
-                    return BadRequest(ResponseHelper.Error<object>($"Batch with ID {convertDto.BatchId} does not exist"));
-                }
-            }
-
-            // Generate secure random password if not provided
-            string password;
-            if (string.IsNullOrEmpty(convertDto.Password))
-            {
-                // Generate random 12-character password
-                const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%";
-                var random = new Random();
-                password = new string(Enumerable.Repeat(chars, 12).Select(s => s[random.Next(s.Length)]).ToArray());
-            }
-            else
-            {
-                password = convertDto.Password;
-            }
-
-            // Create student from inquiry data
-            var student = new Student
-            {
-                Name = inquiry.FullName,
-                Email = inquiry.Email,
-                Phone = inquiry.PhoneNumber,
-                CourseId = convertDto.CourseId,
-                BatchId = convertDto.BatchId,
-                Status = StudentStatus.Enrolled,
-                AdmissionDate = convertDto.AdmissionDate ?? DateTime.UtcNow,
-                FeesTotal = convertDto.FeesTotal ?? 0,
-                FeesPaid = convertDto.FeesPaid ?? 0,
-                Address = convertDto.Address,
-                EmergencyContact = convertDto.EmergencyContact,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            _context.Students.Add(student);
-            await _context.SaveChangesAsync();
-
-            // Update inquiry with conversion info
-            inquiry.ConvertedToStudentId = student.StudentId;
-            inquiry.ConvertedAt = DateTime.UtcNow;
-            inquiry.Status = InquiryStatus.Enrolled;
-            inquiry.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-
-            // Log conversion
-            await _auditService.LogAsync(
-                ActionType.CREATE,
-                "Student",
-                student.StudentId.ToString(),
-                System.Text.Json.JsonSerializer.Serialize(new { InquiryId = inquiry.Id }),
-                System.Text.Json.JsonSerializer.Serialize(new { student.Name, student.Email }),
-                $"Student created from inquiry #{inquiry.Id}"
-            );
-
-            // Return safe data without sensitive fields
-            return Ok(ResponseHelper.Success(new
-            {
-                studentId = student.StudentId,
-                name = student.Name,
-                email = student.Email,
-                phone = student.Phone,
-                courseId = student.CourseId,
-                batchId = student.BatchId,
-                status = student.Status,
-                admissionDate = student.AdmissionDate,
-                feesTotal = student.FeesTotal,
-                feesPaid = student.FeesPaid,
-                inquiryId = inquiry.Id,
-                temporaryPassword = string.IsNullOrEmpty(convertDto.Password) ? password : null // Return temp password only if auto-generated
-            }, "Inquiry successfully converted to student"));
-        }
-
         // GET: api/inquiry/analytics (Admin/Staff only - Get inquiry analytics)
         [HttpGet("analytics")]
         [Authorize(Roles = "Admin,Staff")]
         public async Task<IActionResult> GetInquiryAnalytics()
         {
             var totalInquiries = await _context.Inquiries.CountAsync();
-            var convertedInquiries = await _context.Inquiries.CountAsync(i => i.ConvertedToStudentId.HasValue);
 
             var inquiriesByStatus = await _context.Inquiries
                 .GroupBy(i => i.Status)
@@ -539,8 +410,6 @@ namespace JWTAuthAPI.Controllers
                 .Select(g => new { Course = g.Key, Count = g.Count() })
                 .OrderByDescending(x => x.Count)
                 .ToListAsync();
-
-            var conversionRate = totalInquiries > 0 ? (convertedInquiries * 100.0 / totalInquiries) : 0;
 
             // Inquiries over time (last 30 days)
             var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
@@ -558,8 +427,6 @@ namespace JWTAuthAPI.Controllers
             var analytics = new
             {
                 totalInquiries,
-                convertedInquiries,
-                conversionRate = Math.Round(conversionRate, 2),
                 recentInquiries = new
                 {
                     last7Days = recentInquiries,
@@ -585,13 +452,6 @@ namespace JWTAuthAPI.Controllers
             if (inquiry == null)
             {
                 return NotFound(ResponseHelper.Error<object>("Inquiry not found", 404));
-            }
-
-            // Prevent deletion of converted inquiries
-            if (inquiry.ConvertedToStudentId.HasValue)
-            {
-                return BadRequest(ResponseHelper.Error<object>(
-                    $"Cannot delete converted inquiry. This inquiry was converted to student (ID: {inquiry.ConvertedToStudentId}). Delete the student record first if needed."));
             }
 
             // Store inquiry data before deletion
@@ -634,18 +494,5 @@ namespace JWTAuthAPI.Controllers
         [Required]
         [StringLength(1000, MinimumLength = 5)]
         public string Note { get; set; } = string.Empty;
-    }
-
-    // DTO for converting inquiry to student
-    public class ConvertInquiryDto
-    {
-        public int? CourseId { get; set; }
-        public int? BatchId { get; set; }
-        public string? Address { get; set; }
-        public string? EmergencyContact { get; set; }
-        public DateTime? AdmissionDate { get; set; }
-        public decimal? FeesTotal { get; set; }
-        public decimal? FeesPaid { get; set; }
-        public string? Password { get; set; } // Optional - will use default if not provided
     }
 }
