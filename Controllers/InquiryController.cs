@@ -226,7 +226,17 @@ namespace JWTAuthAPI.Controllers
                 $"Inquiry status updated from {oldStatus} to {inquiry.Status}"
             );
 
-            return Ok(ResponseHelper.Success(inquiry, "Inquiry status updated successfully"));
+            // Return safe data only
+            return Ok(ResponseHelper.Success(new
+            {
+                id = inquiry.Id,
+                fullName = inquiry.FullName,
+                email = inquiry.Email,
+                status = inquiry.Status,
+                responseNotes = inquiry.ResponseNotes,
+                responsedAt = inquiry.ResponsedAt,
+                updatedAt = inquiry.UpdatedAt
+            }, "Inquiry status updated successfully"));
         }
 
         // PUT: api/inquiry/{id}/assign (Admin/Staff only - Assign inquiry to staff)
@@ -281,10 +291,23 @@ namespace JWTAuthAPI.Controllers
                 $"Inquiry assigned to {assignedUser.Username}"
             );
 
+            // Return safe data without sensitive fields
             return Ok(ResponseHelper.Success(new
             {
-                inquiry,
-                assignedTo = new { assignedUser.Id, assignedUser.Username, assignedUser.Email }
+                inquiryId = inquiry.Id,
+                fullName = inquiry.FullName,
+                email = inquiry.Email,
+                phoneNumber = inquiry.PhoneNumber,
+                courseInterest = inquiry.CourseInterest,
+                status = inquiry.Status,
+                assignedToId = inquiry.AssignedToId,
+                assignedAt = inquiry.AssignedAt,
+                assignedTo = new
+                {
+                    id = assignedUser.Id,
+                    username = assignedUser.Username,
+                    email = assignedUser.Email
+                }
             }, "Inquiry assigned successfully"));
         }
 
@@ -479,9 +502,19 @@ namespace JWTAuthAPI.Controllers
                 $"Student created from inquiry #{inquiry.Id}"
             );
 
+            // Return safe data without sensitive fields
             return Ok(ResponseHelper.Success(new
             {
-                student,
+                studentId = student.StudentId,
+                name = student.Name,
+                email = student.Email,
+                phone = student.Phone,
+                courseId = student.CourseId,
+                batchId = student.BatchId,
+                status = student.Status,
+                admissionDate = student.AdmissionDate,
+                feesTotal = student.FeesTotal,
+                feesPaid = student.FeesPaid,
                 inquiryId = inquiry.Id,
                 temporaryPassword = string.IsNullOrEmpty(convertDto.Password) ? password : null // Return temp password only if auto-generated
             }, "Inquiry successfully converted to student"));
