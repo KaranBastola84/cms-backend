@@ -317,6 +317,24 @@ namespace JWTAuthAPI.Controllers
             _context.FollowUpNotes.Add(followUpNote);
             await _context.SaveChangesAsync();
 
+            // Reload with CreatedBy to include user details
+            var createdNote = await _context.FollowUpNotes
+                .Include(f => f.CreatedBy)
+                .Where(f => f.Id == followUpNote.Id)
+                .Select(f => new
+                {
+                    f.Id,
+                    f.Note,
+                    f.CreatedAt,
+                    createdBy = new
+                    {
+                        f.CreatedBy!.Id,
+                        f.CreatedBy.Username,
+                        f.CreatedBy.Email
+                    }
+                })
+                .FirstOrDefaultAsync();
+
             // Log follow-up note addition
             await _auditService.LogAsync(
                 ActionType.CREATE,
@@ -327,7 +345,7 @@ namespace JWTAuthAPI.Controllers
                 $"Follow-up note added to inquiry #{id}"
             );
 
-            return Ok(ResponseHelper.Success(followUpNote, "Follow-up note added successfully"));
+            return Ok(ResponseHelper.Success(createdNote, "Follow-up note added successfully"));
         }
 
         // GET: api/inquiry/{id}/followup (Admin/Staff only - Get all follow-up notes)
