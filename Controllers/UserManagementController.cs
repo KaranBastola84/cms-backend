@@ -230,12 +230,15 @@ namespace JWTAuthAPI.Controllers
                 });
 
             // Validate role
-            if (roleDto.Role != Roles.Admin && roleDto.Role != Roles.User)
+            if (roleDto.Role != Roles.Admin &&
+                roleDto.Role != Roles.Staff &&
+                roleDto.Role != Roles.Trainer &&
+                roleDto.Role != Roles.Student)
                 return BadRequest(new ApiResponse<string>
                 {
                     StatusCode = 400,
                     IsSuccess = false,
-                    ErrorMessage = { "Invalid role. Allowed values: Admin, User" }
+                    ErrorMessage = { "Invalid role. Allowed values: Admin, Staff, Trainer, Student" }
                 });
 
             // Prevent admin from changing their own role
