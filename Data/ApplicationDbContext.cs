@@ -30,6 +30,11 @@ namespace JWTAuthAPI.Data
         public DbSet<FeeStructure> FeeStructures { get; set; } // DbSet for Fee Structures
         public DbSet<Transaction> Transactions { get; set; } // DbSet for Transactions
         public DbSet<UserNotificationRead> UserNotificationReads { get; set; } // DbSet for User Notification Read Status
+        public DbSet<Product> Products { get; set; } // DbSet for Products (Inventory)
+        public DbSet<ProductCategory> ProductCategories { get; set; } // DbSet for Product Categories
+        public DbSet<Order> Orders { get; set; } // DbSet for Orders
+        public DbSet<OrderItem> OrderItems { get; set; } // DbSet for Order Items
+        public DbSet<ProductReview> ProductReviews { get; set; } // DbSet for Product Reviews
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -141,6 +146,79 @@ namespace JWTAuthAPI.Data
             modelBuilder.Entity<UserNotificationRead>()
                 .HasIndex(n => new { n.UserId, n.NotificationKey })
                 .IsUnique();
+
+            // Configure Product indexes
+            modelBuilder.Entity<Product>()
+                .HasIndex(p => p.Category);
+
+            modelBuilder.Entity<Product>()
+                .HasIndex(p => p.IsActive);
+
+            modelBuilder.Entity<Product>()
+                .HasIndex(p => p.IsFeatured);
+
+            // Configure Order indexes
+            modelBuilder.Entity<Order>()
+                .HasIndex(o => o.OrderNumber)
+                .IsUnique();
+
+            modelBuilder.Entity<Order>()
+                .HasIndex(o => o.CustomerEmail);
+
+            modelBuilder.Entity<Order>()
+                .HasIndex(o => o.Status);
+
+            modelBuilder.Entity<Order>()
+                .HasIndex(o => o.OrderDate);
+
+            // Configure Order-OrderItem relationship
+            modelBuilder.Entity<OrderItem>()
+                .HasOne(oi => oi.Order)
+                .WithMany(o => o.OrderItems)
+                .HasForeignKey(oi => oi.OrderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure Product-OrderItem relationship
+            modelBuilder.Entity<OrderItem>()
+                .HasOne(oi => oi.Product)
+                .WithMany()
+                .HasForeignKey(oi => oi.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Configure OrderItem indexes
+            modelBuilder.Entity<OrderItem>()
+                .HasIndex(oi => oi.OrderId);
+
+            modelBuilder.Entity<OrderItem>()
+                .HasIndex(oi => oi.ProductId);
+
+            // Configure ProductReview indexes
+            modelBuilder.Entity<ProductReview>()
+                .HasIndex(pr => pr.ProductId);
+
+            modelBuilder.Entity<ProductReview>()
+                .HasIndex(pr => pr.IsApproved);
+
+            modelBuilder.Entity<ProductReview>()
+                .HasIndex(pr => pr.CreatedAt);
+
+            // Configure Product-ProductReview relationship
+            modelBuilder.Entity<ProductReview>()
+                .HasOne(pr => pr.Product)
+                .WithMany()
+                .HasForeignKey(pr => pr.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure ProductCategory indexes
+            modelBuilder.Entity<ProductCategory>()
+                .HasIndex(pc => pc.Name)
+                .IsUnique();
+
+            modelBuilder.Entity<ProductCategory>()
+                .HasIndex(pc => pc.IsActive);
+
+            modelBuilder.Entity<ProductCategory>()
+                .HasIndex(pc => pc.DisplayOrder);
         }
     }
 }
