@@ -142,7 +142,7 @@ namespace JWTAuthAPI.Services
                     var mailMessage = new MailMessage
                     {
                         From = new MailAddress(fromEmail, fromName),
-                        Subject = "Your Staff Account Verification Code",
+                        Subject = "Your Account Verification Code",
                         IsBodyHtml = true,
                         Body = GetOTPEmailBody(fullName, otp)
                     };
@@ -218,12 +218,12 @@ namespace JWTAuthAPI.Services
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>Coffee School Staff Portal</h1>
+            <h1>Coffee School Management Portal</h1>
         </div>
         <div class='content'>
             <h2>Welcome to Coffee School!</h2>
             <p>Dear {fullName},</p>
-            <p>An administrator has created a staff account for you. Please use the verification code below to complete your account setup:</p>
+            <p>An administrator has created an account for you. Please use the verification code below to complete your account setup:</p>
             
             <div class='otp-box'>
                 <p style='margin: 0; font-size: 14px;'>Your Verification Code:</p>
@@ -268,7 +268,7 @@ namespace JWTAuthAPI.Services
                     var mailMessage = new MailMessage
                     {
                         From = new MailAddress(fromEmail, fromName),
-                        Subject = "Your Staff Account is Now Active!",
+                        Subject = "Your Account is Now Active!",
                         IsBodyHtml = true,
                         Body = GetActivationEmailBody(fullName, email)
                     };
@@ -354,7 +354,7 @@ namespace JWTAuthAPI.Services
 <body>
     <div class='container'>
         <div class='header'>
-            <h1>Coffee School Staff Portal</h1>
+            <h1>Coffee School Management Portal</h1>
         </div>
         <div class='content'>
             <div class='success-box'>
@@ -363,7 +363,7 @@ namespace JWTAuthAPI.Services
             </div>
             
             <p>Dear {fullName},</p>
-            <p>Great news! Your staff account has been activated by the administrator. You can now log in to the Coffee School staff portal.</p>
+            <p>Great news! Your account has been activated by the administrator. You can now log in to the Coffee School management portal.</p>
             
             <div class='credentials-box'>
                 <p style='margin: 5px 0;'><strong>Your Login Email:</strong></p>
@@ -374,7 +374,7 @@ namespace JWTAuthAPI.Services
             
             <p><strong>What's next?</strong></p>
             <ul>
-                <li>Log in to the staff portal</li>
+                <li>Log in to the management portal</li>
                 <li>Complete your profile information</li>
                 <li>Familiarize yourself with the system</li>
                 <li>Contact your supervisor if you need assistance</li>
