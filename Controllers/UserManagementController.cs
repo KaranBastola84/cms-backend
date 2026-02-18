@@ -33,6 +33,9 @@ namespace JWTAuthAPI.Controllers
                     u.Email,
                     u.Role,
                     u.IsActive,
+                    u.FirstName,
+                    u.LastName,
+                    u.PhoneNumber,
                     u.CreatedAt,
                     u.UpdatedAt
                 })
@@ -60,6 +63,9 @@ namespace JWTAuthAPI.Controllers
                     u.Email,
                     u.Role,
                     u.IsActive,
+                    u.FirstName,
+                    u.LastName,
+                    u.PhoneNumber,
                     u.CreatedAt,
                     u.UpdatedAt
                 })
@@ -298,6 +304,9 @@ namespace JWTAuthAPI.Controllers
                     u.Email,
                     u.Role,
                     u.IsActive,
+                    u.FirstName,
+                    u.LastName,
+                    u.PhoneNumber,
                     u.CreatedAt,
                     u.UpdatedAt
                 })
@@ -316,6 +325,68 @@ namespace JWTAuthAPI.Controllers
                 StatusCode = 200,
                 IsSuccess = true,
                 Result = user
+            });
+        }
+
+        // Any authenticated user - Update their own profile
+        [HttpPut("profile")]
+        [Authorize]
+        public async Task<IActionResult> UpdateMyProfile([FromBody] UpdateProfileDto profileDto)
+        {
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(userId) || !int.TryParse(userId, out int id))
+                return Unauthorized(new ApiResponse<string>
+                {
+                    StatusCode = 401,
+                    IsSuccess = false,
+                    ErrorMessage = { "Invalid token" }
+                });
+
+            var user = await _context.ApplicationUsers.FindAsync(id);
+
+            if (user == null)
+                return NotFound(new ApiResponse<string>
+                {
+                    StatusCode = 404,
+                    IsSuccess = false,
+                    ErrorMessage = { "User not found" }
+                });
+
+            // Update profile fields
+            user.FirstName = profileDto.FirstName;
+            user.LastName = profileDto.LastName;
+            user.PhoneNumber = profileDto.PhoneNumber;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            // Log profile update
+            await _auditService.LogAsync(
+                ActionType.UPDATE,
+                "User",
+                user.Id.ToString(),
+                null,
+                System.Text.Json.JsonSerializer.Serialize(new { user.FirstName, user.LastName, user.PhoneNumber }),
+                $"User {user.Username} updated their profile",
+                user.Id.ToString(),
+                user.Email
+            );
+
+            return Ok(new ApiResponse<object>
+            {
+                StatusCode = 200,
+                IsSuccess = true,
+                Result = new
+                {
+                    user.Id,
+                    user.Username,
+                    user.Email,
+                    user.FirstName,
+                    user.LastName,
+                    user.PhoneNumber,
+                    user.UpdatedAt
+                }
             });
         }
 
