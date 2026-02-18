@@ -120,7 +120,8 @@ namespace JWTAuthAPI.Controllers
                     assignedTo = i.AssignedTo != null ? new
                     {
                         i.AssignedTo.Id,
-                        i.AssignedTo.Username,
+                        i.AssignedTo.FirstName,
+                        i.AssignedTo.LastName,
                         i.AssignedTo.Email
                     } : null
                 })
@@ -167,7 +168,8 @@ namespace JWTAuthAPI.Controllers
                     assignedTo = i.AssignedTo != null ? new
                     {
                         i.AssignedTo.Id,
-                        i.AssignedTo.Username,
+                        i.AssignedTo.FirstName,
+                        i.AssignedTo.LastName,
                         i.AssignedTo.Email
                     } : null
                 })
@@ -293,7 +295,8 @@ namespace JWTAuthAPI.Controllers
                 assignedTo = new
                 {
                     id = assignedUser.Id,
-                    username = assignedUser.Username,
+                    firstName = assignedUser.FirstName,
+                    lastName = assignedUser.LastName,
                     email = assignedUser.Email
                 }
             }, "Inquiry assigned successfully"));
@@ -340,7 +343,8 @@ namespace JWTAuthAPI.Controllers
                     createdBy = new
                     {
                         f.CreatedBy!.Id,
-                        f.CreatedBy.Username,
+                        f.CreatedBy.FirstName,
+                        f.CreatedBy.LastName,
                         f.CreatedBy.Email
                     }
                 })
@@ -383,7 +387,8 @@ namespace JWTAuthAPI.Controllers
                     createdBy = new
                     {
                         f.CreatedBy!.Id,
-                        f.CreatedBy.Username,
+                        f.CreatedBy.FirstName,
+                        f.CreatedBy.LastName,
                         f.CreatedBy.Email
                     }
                 })
