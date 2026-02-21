@@ -38,5 +38,9 @@ namespace JWTAuthAPI.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+        // Concurrency token for optimistic concurrency control
+        [Timestamp]
+        public byte[]? RowVersion { get; set; }
     }
 }
