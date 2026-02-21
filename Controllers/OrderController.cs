@@ -323,7 +323,7 @@ namespace JWTAuthAPI.Controllers
                 if (dto.Status == OrderStatus.Confirmed && oldStatus != OrderStatus.Confirmed)
                 {
                     var productIds = order.OrderItems.Select(oi => oi.ProductId).ToArray();
-                    
+
                     // Lock products for update to prevent concurrent modifications
                     var products = await _context.Products
                         .FromSqlRaw("SELECT * FROM \"Products\" WHERE \"Id\" = ANY(@p0) FOR UPDATE", productIds)
@@ -364,7 +364,7 @@ namespace JWTAuthAPI.Controllers
                 if (oldStatus == OrderStatus.Confirmed && dto.Status != OrderStatus.Confirmed)
                 {
                     var productIds = order.OrderItems.Select(oi => oi.ProductId).ToArray();
-                    
+
                     // Lock products for update
                     var products = await _context.Products
                         .FromSqlRaw("SELECT * FROM \"Products\" WHERE \"Id\" = ANY(@p0) FOR UPDATE", productIds)
