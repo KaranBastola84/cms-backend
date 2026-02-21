@@ -401,6 +401,11 @@ namespace JWTAuthAPI.Controllers
                     UpdatedAt = product.UpdatedAt
                 }, "Product updated successfully"));
             }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Another user modified the product, reload and inform user
+                return Conflict(ResponseHelper.Error<object>("This product was modified by another user. Please refresh and try again.", 409));
+            }
             catch (Exception ex)
             {
                 return StatusCode(500, ResponseHelper.Error<object>($"Error updating product: {ex.Message}", 500));
@@ -453,6 +458,11 @@ namespace JWTAuthAPI.Controllers
                     newStock = product.StockQuantity,
                     isLowStock = product.StockQuantity <= product.LowStockThreshold
                 }, "Stock updated successfully"));
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Another user modified the stock, reload and inform user
+                return Conflict(ResponseHelper.Error<object>("This product's stock was modified by another process. Please refresh and try again.", 409));
             }
             catch (Exception ex)
             {

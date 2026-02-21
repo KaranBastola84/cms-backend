@@ -33,7 +33,8 @@ namespace JWTAuthAPI.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> PlaceOrder([FromBody] CreateOrderDto dto)
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            // Use Serializable isolation to prevent concurrent orders from overselling
+            using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 if (!ModelState.IsValid)
@@ -41,10 +42,13 @@ namespace JWTAuthAPI.Controllers
                     return BadRequest(ResponseHelper.Error<object>("Invalid order data"));
                 }
 
-                // Validate products and check stock availability
+                // Validate products and check stock availability with row-level locking
                 var productIds = dto.OrderItems.Select(item => item.ProductId).ToList();
+
+                // Use FOR UPDATE to lock the rows (pessimistic locking)
+                // Note: PostgreSQL ANY expects an array parameter
                 var products = await _context.Products
-                    .Where(p => productIds.Contains(p.Id) && p.IsActive)
+                    .FromSqlRaw("SELECT * FROM \"Products\" WHERE \"Id\" = ANY(@p0) AND \"IsActive\" = true FOR UPDATE", productIds.ToArray())
                     .ToListAsync();
 
                 if (products.Count != productIds.Distinct().Count())
@@ -52,7 +56,7 @@ namespace JWTAuthAPI.Controllers
                     return BadRequest(ResponseHelper.Error<object>("One or more products are not available"));
                 }
 
-                // Validate stock availability
+                // Validate stock availability (now with locked rows)
                 foreach (var item in dto.OrderItems)
                 {
                     var product = products.FirstOrDefault(p => p.Id == item.ProductId);
@@ -295,7 +299,8 @@ namespace JWTAuthAPI.Controllers
         [Authorize(Roles = Roles.Admin)]
         public async Task<IActionResult> UpdateOrderStatus(int id, [FromBody] UpdateOrderStatusDto dto)
         {
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            // Use Serializable isolation for critical stock operations
+            using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 if (!ModelState.IsValid)
@@ -314,13 +319,19 @@ namespace JWTAuthAPI.Controllers
 
                 var oldStatus = order.Status;
 
-                // If changing to Confirmed, reduce stock
+                // If changing to Confirmed, reduce stock with pessimistic locking
                 if (dto.Status == OrderStatus.Confirmed && oldStatus != OrderStatus.Confirmed)
                 {
+                    var productIds = order.OrderItems.Select(oi => oi.ProductId).ToArray();
+                    
+                    // Lock products for update to prevent concurrent modifications
+                    var products = await _context.Products
+                        .FromSqlRaw("SELECT * FROM \"Products\" WHERE \"Id\" = ANY(@p0) FOR UPDATE", productIds)
+                        .ToDictionaryAsync(p => p.Id);
+
                     foreach (var item in order.OrderItems)
                     {
-                        var product = await _context.Products.FindAsync(item.ProductId);
-                        if (product != null)
+                        if (products.TryGetValue(item.ProductId, out var product))
                         {
                             if (product.StockQuantity < item.Quantity)
                             {
@@ -349,13 +360,19 @@ namespace JWTAuthAPI.Controllers
                     }
                 }
 
-                // If changing back from Confirmed to another status, restore stock
+                // If changing back from Confirmed to another status, restore stock with locking
                 if (oldStatus == OrderStatus.Confirmed && dto.Status != OrderStatus.Confirmed)
                 {
+                    var productIds = order.OrderItems.Select(oi => oi.ProductId).ToArray();
+                    
+                    // Lock products for update
+                    var products = await _context.Products
+                        .FromSqlRaw("SELECT * FROM \"Products\" WHERE \"Id\" = ANY(@p0) FOR UPDATE", productIds)
+                        .ToDictionaryAsync(p => p.Id);
+
                     foreach (var item in order.OrderItems)
                     {
-                        var product = await _context.Products.FindAsync(item.ProductId);
-                        if (product != null)
+                        if (products.TryGetValue(item.ProductId, out var product))
                         {
                             product.StockQuantity += item.Quantity;
                             product.UpdatedAt = DateTime.UtcNow;
@@ -543,27 +560,46 @@ namespace JWTAuthAPI.Controllers
         }
 
         /// <summary>
-        /// Generate unique order number
+        /// Generate unique order number with retry logic for concurrency
         /// </summary>
         private async Task<string> GenerateOrderNumberAsync()
         {
             var year = DateTime.UtcNow.Year;
-            var lastOrder = await _context.Orders
-                .Where(o => o.OrderNumber.StartsWith($"ORD-{year}-"))
-                .OrderByDescending(o => o.OrderNumber)
-                .FirstOrDefaultAsync();
+            const int maxRetries = 5;
 
-            int nextNumber = 1;
-            if (lastOrder != null)
+            for (int retry = 0; retry < maxRetries; retry++)
             {
-                var lastNumberStr = lastOrder.OrderNumber.Split('-').LastOrDefault();
-                if (int.TryParse(lastNumberStr, out int lastNumber))
+                // Lock the table to prevent concurrent order number generation
+                var lastOrder = await _context.Orders
+                    .Where(o => o.OrderNumber.StartsWith($"ORD-{year}-"))
+                    .OrderByDescending(o => o.OrderNumber)
+                    .FirstOrDefaultAsync();
+
+                int nextNumber = 1;
+                if (lastOrder != null)
                 {
-                    nextNumber = lastNumber + 1;
+                    var lastNumberStr = lastOrder.OrderNumber.Split('-').LastOrDefault();
+                    if (int.TryParse(lastNumberStr, out int lastNumber))
+                    {
+                        nextNumber = lastNumber + 1;
+                    }
                 }
+
+                var orderNumber = $"ORD-{year}-{nextNumber:D4}";
+
+                // Check if this order number already exists (race condition check)
+                var exists = await _context.Orders.AnyAsync(o => o.OrderNumber == orderNumber);
+                if (!exists)
+                {
+                    return orderNumber;
+                }
+
+                // If exists, wait a bit and retry
+                await Task.Delay(50 * (retry + 1)); // Exponential backoff
             }
 
-            return $"ORD-{year}-{nextNumber:D4}";
+            // Fallback: use GUID suffix if all retries fail
+            return $"ORD-{year}-{Guid.NewGuid().ToString().Substring(0, 8).ToUpper()}";
         }
     }
 }
