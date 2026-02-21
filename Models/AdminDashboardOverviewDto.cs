@@ -7,6 +7,7 @@ namespace JWTAuthAPI.Models
         public BatchStatistics Batches { get; set; } = new();
         public StaffStatistics Staff { get; set; } = new();
         public InquiryStatistics Inquiries { get; set; } = new();
+        public InventoryStatistics Inventory { get; set; } = new();
     }
 
     public class StudentStatistics
@@ -52,5 +53,37 @@ namespace JWTAuthAPI.Models
         public int Pending { get; set; }
         public int FollowedUp { get; set; }
         public int Closed { get; set; }
+    }
+
+    public class InventoryStatistics
+    {
+        // Product metrics
+        public int TotalProducts { get; set; }
+        public int ActiveProducts { get; set; }
+        public int OutOfStock { get; set; }
+        public int LowStock { get; set; }
+
+        // Order metrics
+        public int TotalOrders { get; set; }
+        public int PendingOrders { get; set; }
+        public int ContactedOrders { get; set; }
+        public int ConfirmedOrders { get; set; }
+        public int DeliveredOrders { get; set; }
+        public int OrdersToday { get; set; }
+        public int OrdersThisWeek { get; set; }
+        public int OrdersThisMonth { get; set; }
+
+        // Revenue metrics
+        public decimal TotalRevenue { get; set; }
+        public decimal RevenueToday { get; set; }
+        public decimal RevenueThisWeek { get; set; }
+        public decimal RevenueThisMonth { get; set; }
+        public decimal AverageOrderValue { get; set; }
+
+        // Review metrics
+        public int TotalReviews { get; set; }
+        public int PendingReviews { get; set; }
+        public int ApprovedReviews { get; set; }
+        public double AverageRating { get; set; }
     }
 }

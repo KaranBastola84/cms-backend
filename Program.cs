@@ -8,19 +8,39 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args); // Create a builder for the web application
 
-// Configure CORS policy
+// Configure global request size limits (30MB max)
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 31457280; // 30 MB
+    options.ValueLengthLimit = 31457280;
+});
+
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxRequestBodySize = 31457280; // 30 MB
+});
+
+// Configure CORS policy - SECURITY: Restrict to specific origins
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
+        var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
+                             ?? new[] { "http://localhost:5174", "http://localhost:5173" };
+
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials();
     });
 });
 
 builder.Services.AddControllers(); // Add support for controllers
 builder.Services.AddEndpointsApiExplorer(); // Add support for API endpoint exploration
+
+// Configure rate limiting to prevent abuse
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<JWTAuthAPI.Middleware.RateLimitingMiddleware>();
 
 // Configure Swagger with JWT Bearer Authentication
 builder.Services.AddSwaggerGen(options =>
@@ -118,8 +138,41 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Add Security Headers
+app.Use(async (context, next) =>
+{
+    // Prevent clickjacking
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    // Prevent MIME type sniffing
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    // Enable XSS protection
+    context.Response.Headers["X-XSS-Protection"] = "1; mode=block";
+    // Referrer policy
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    // Content Security Policy
+    context.Response.Headers["Content-Security-Policy"] =
+        "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'";
+    // HSTS - Force HTTPS (only in production)
+    if (app.Environment.IsProduction())
+    {
+        context.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+    }
+    await next();
+});
+
+// Enable serving static files from Uploads directory
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
+        Path.Combine(app.Environment.ContentRootPath, "Uploads")),
+    RequestPath = "/Uploads"
+});
+
 // Enable CORS
 app.UseCors("AllowAll");
+
+// Add rate limiting middleware
+app.UseMiddleware<JWTAuthAPI.Middleware.RateLimitingMiddleware>();
 
 app.UseAuthentication(); // add this
 app.UseAuthorization();

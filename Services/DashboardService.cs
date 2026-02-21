@@ -84,13 +84,59 @@ namespace JWTAuthAPI.Services
                     Closed = inquiries.Count(i => i.Status == InquiryStatus.Closed)
                 };
 
+                // Get inventory statistics
+                var products = await _context.Products.ToListAsync();
+                var orders = await _context.Orders.ToListAsync();
+                var reviews = await _context.ProductReviews.ToListAsync();
+
+                var todayDate = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+                var ordersToday = orders.Where(o => o.OrderDate.Date == todayDate).ToList();
+                var ordersThisWeek = orders.Where(o => o.OrderDate >= weekAgo).ToList();
+                var ordersThisMonth = orders.Where(o => o.OrderDate >= monthStart).ToList();
+
+                var deliveredOrders = orders.Where(o => o.Status == OrderStatus.Delivered).ToList();
+                var approvedReviews = reviews.Where(r => r.IsApproved).ToList();
+
+                var inventoryStats = new InventoryStatistics
+                {
+                    // Product metrics
+                    TotalProducts = products.Count,
+                    ActiveProducts = products.Count(p => p.IsActive),
+                    OutOfStock = products.Count(p => p.StockQuantity == 0),
+                    LowStock = products.Count(p => p.StockQuantity > 0 && p.StockQuantity <= p.LowStockThreshold),
+
+                    // Order metrics
+                    TotalOrders = orders.Count,
+                    PendingOrders = orders.Count(o => o.Status == OrderStatus.Pending),
+                    ContactedOrders = orders.Count(o => o.Status == OrderStatus.Contacted),
+                    ConfirmedOrders = orders.Count(o => o.Status == OrderStatus.Confirmed),
+                    DeliveredOrders = deliveredOrders.Count,
+                    OrdersToday = ordersToday.Count,
+                    OrdersThisWeek = ordersThisWeek.Count,
+                    OrdersThisMonth = ordersThisMonth.Count,
+
+                    // Revenue metrics (only from delivered orders)
+                    TotalRevenue = deliveredOrders.Any() ? deliveredOrders.Sum(o => o.TotalAmount) : 0,
+                    RevenueToday = ordersToday.Where(o => o.Status == OrderStatus.Delivered).Sum(o => o.TotalAmount),
+                    RevenueThisWeek = ordersThisWeek.Where(o => o.Status == OrderStatus.Delivered).Sum(o => o.TotalAmount),
+                    RevenueThisMonth = ordersThisMonth.Where(o => o.Status == OrderStatus.Delivered).Sum(o => o.TotalAmount),
+                    AverageOrderValue = deliveredOrders.Any() ? Math.Round(deliveredOrders.Average(o => o.TotalAmount), 2) : 0,
+
+                    // Review metrics
+                    TotalReviews = reviews.Count,
+                    PendingReviews = reviews.Count(r => !r.IsApproved),
+                    ApprovedReviews = approvedReviews.Count,
+                    AverageRating = approvedReviews.Any() ? Math.Round(approvedReviews.Average(r => r.Rating), 1) : 0
+                };
+
                 var overview = new AdminDashboardOverviewDto
                 {
                     Students = studentStats,
                     Courses = courseStats,
                     Batches = batchStats,
                     Staff = staffStats,
-                    Inquiries = inquiryStats
+                    Inquiries = inquiryStats,
+                    Inventory = inventoryStats
                 };
 
                 return ResponseHelper.Success(overview);
@@ -1024,6 +1070,91 @@ namespace JWTAuthAPI.Services
                         {
                             { "amount", payment.Amount.ToString() },
                             { "method", payment.PaymentMethod ?? "N/A" }
+                        }
+                    });
+                }
+
+                // 9. NEW ORDERS - Pending orders (last 24 hours)
+                var newOrders = await _context.Orders
+                    .Where(o => o.Status == OrderStatus.Pending && o.OrderDate >= yesterday)
+                    .OrderByDescending(o => o.OrderDate)
+                    .Take(20)
+                    .ToListAsync();
+
+                foreach (var order in newOrders)
+                {
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"order-new-{order.Id}",
+                        Type = "order",
+                        Severity = "info",
+                        Title = "New Order Received",
+                        Message = $"Order {order.OrderNumber} from {order.CustomerName} - ${order.TotalAmount:N2}",
+                        Timestamp = order.OrderDate,
+                        ActionUrl = $"/orders/{order.Id}",
+                        RelatedId = order.Id,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "amount", order.TotalAmount.ToString() },
+                            { "customer", order.CustomerEmail }
+                        }
+                    });
+                }
+
+                // 10. LOW STOCK ALERTS - Critical (stock below threshold)
+                var lowStockProducts = await _context.Products
+                    .Where(p => p.IsActive && p.StockQuantity <= p.LowStockThreshold)
+                    .OrderBy(p => p.StockQuantity)
+                    .Take(10)
+                    .ToListAsync();
+
+                foreach (var product in lowStockProducts)
+                {
+                    var severity = product.StockQuantity == 0 ? "critical" : "warning";
+                    var title = product.StockQuantity == 0 ? "Out of Stock" : "Low Stock Alert";
+
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"stock-low-{product.Id}",
+                        Type = "low_stock",
+                        Severity = severity,
+                        Title = title,
+                        Message = $"{product.Name} - Stock: {product.StockQuantity} (Threshold: {product.LowStockThreshold})",
+                        Timestamp = product.UpdatedAt,
+                        ActionUrl = $"/products/{product.Id}",
+                        RelatedId = product.Id,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "stock", product.StockQuantity.ToString() },
+                            { "threshold", product.LowStockThreshold.ToString() }
+                        }
+                    });
+                }
+
+                // 11. NEW PRODUCT REVIEWS - Pending approval
+                var pendingReviews = await _context.ProductReviews
+                    .Include(r => r.Product)
+                    .Where(r => !r.IsApproved && r.CreatedAt >= now.AddDays(-7))
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Take(10)
+                    .ToListAsync();
+
+                foreach (var review in pendingReviews)
+                {
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"review-pending-{review.Id}",
+                        Type = "review",
+                        Severity = "info",
+                        Title = "New Product Review",
+                        Message = $"{review.CustomerName} reviewed {review.Product.Name} ({review.Rating}★)",
+                        Timestamp = review.CreatedAt,
+                        ActionUrl = $"/reviews/{review.Id}",
+                        RelatedId = review.Id,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "rating", review.Rating.ToString() },
+                            { "product", review.Product.Name }
                         }
                     });
                 }

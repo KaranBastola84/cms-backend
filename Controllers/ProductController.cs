@@ -14,11 +14,23 @@ namespace JWTAuthAPI.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly IAuditService _auditService;
+        private readonly IWebHostEnvironment _environment;
+        private readonly ILogger<ProductController> _logger;
 
-        public ProductController(ApplicationDbContext context, IAuditService auditService)
+        // Allowed file extensions and max size
+        private readonly string[] _allowedImageExtensions = { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+        private readonly long _maxFileSize = 5 * 1024 * 1024; // 5 MB
+
+        public ProductController(
+            ApplicationDbContext context,
+            IAuditService auditService,
+            IWebHostEnvironment environment,
+            ILogger<ProductController> logger)
         {
             _context = context;
             _auditService = auditService;
+            _environment = environment;
+            _logger = logger;
         }
 
         /// <summary>
@@ -105,7 +117,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error retrieving products: {ex.Message}", 500));
+                _logger.LogError(ex, "Error retrieving products");
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while retrieving products", 500));
             }
         }
 
@@ -147,7 +160,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error retrieving product: {ex.Message}", 500));
+                _logger.LogError(ex, "Error retrieving product by ID: {ProductId}", id);
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while retrieving the product", 500));
             }
         }
 
@@ -185,7 +199,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error retrieving featured products: {ex.Message}", 500));
+                _logger.LogError(ex, "Error retrieving featured products");
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while retrieving featured products", 500));
             }
         }
 
@@ -306,7 +321,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error creating product: {ex.Message}", 500));
+                _logger.LogError(ex, "Error creating product");
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while creating the product", 500));
             }
         }
 
@@ -389,9 +405,15 @@ namespace JWTAuthAPI.Controllers
                     UpdatedAt = product.UpdatedAt
                 }, "Product updated successfully"));
             }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Another user modified the product, reload and inform user
+                return Conflict(ResponseHelper.Error<object>("This product was modified by another user. Please refresh and try again.", 409));
+            }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error updating product: {ex.Message}", 500));
+                _logger.LogError(ex, "Error updating product: {ProductId}", id);
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while updating the product", 500));
             }
         }
 
@@ -442,9 +464,15 @@ namespace JWTAuthAPI.Controllers
                     isLowStock = product.StockQuantity <= product.LowStockThreshold
                 }, "Stock updated successfully"));
             }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Another user modified the stock, reload and inform user
+                return Conflict(ResponseHelper.Error<object>("This product's stock was modified by another process. Please refresh and try again.", 409));
+            }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error updating stock: {ex.Message}", 500));
+                _logger.LogError(ex, "Error updating stock for product: {ProductId}", id);
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while updating stock", 500));
             }
         }
 
@@ -514,6 +542,177 @@ namespace JWTAuthAPI.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, ResponseHelper.Error<object>($"Error retrieving categories: {ex.Message}", 500));
+            }
+        }
+
+        /// <summary>
+        /// Upload product image (Admin only)
+        /// </summary>
+        [HttpPost("{id}/image")]
+        [Authorize(Roles = Roles.Admin)]
+        public async Task<IActionResult> UploadProductImage(int id, IFormFile image)
+        {
+            try
+            {
+                // Check if product exists
+                var product = await _context.Products.FindAsync(id);
+                if (product == null)
+                {
+                    return NotFound(ResponseHelper.Error<object>("Product not found", 404));
+                }
+
+                // Validate image file
+                if (image == null || image.Length == 0)
+                {
+                    return BadRequest(ResponseHelper.Error<object>("No image file provided"));
+                }
+
+                // Validate file size
+                if (image.Length > _maxFileSize)
+                {
+                    return BadRequest(ResponseHelper.Error<object>($"File size cannot exceed {_maxFileSize / 1024 / 1024}MB"));
+                }
+
+                // Validate file extension
+                var fileExtension = Path.GetExtension(image.FileName).ToLowerInvariant();
+                if (!_allowedImageExtensions.Contains(fileExtension))
+                {
+                    return BadRequest(ResponseHelper.Error<object>($"Invalid file type. Allowed types: {string.Join(", ", _allowedImageExtensions)}"));
+                }
+
+                // SECURITY: Validate content type matches expected image format
+                var contentType = image.ContentType.ToLower();
+                if (!contentType.StartsWith("image/"))
+                {
+                    return BadRequest(ResponseHelper.Error<object>("File content type does not match expected image format"));
+                }
+
+                // Create Products folder if it doesn't exist
+                var uploadsFolder = Path.Combine(_environment.ContentRootPath, "Uploads", "Products");
+                if (!Directory.Exists(uploadsFolder))
+                {
+                    Directory.CreateDirectory(uploadsFolder);
+                }
+
+                // Delete old image file if exists
+                if (!string.IsNullOrEmpty(product.ImageUrl))
+                {
+                    var oldImagePath = Path.Combine(_environment.ContentRootPath, product.ImageUrl.TrimStart('/'));
+                    if (System.IO.File.Exists(oldImagePath))
+                    {
+                        try
+                        {
+                            System.IO.File.Delete(oldImagePath);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to delete old product image: {ImagePath}", oldImagePath);
+                        }
+                    }
+                }
+
+                // Generate unique filename
+                var uniqueFileName = $"product_{id}_{Guid.NewGuid()}{fileExtension}";
+                var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+                // Save file to disk
+                using (var stream = new FileStream(filePath, FileMode.Create))
+                {
+                    await image.CopyToAsync(stream);
+                }
+
+                // Update product ImageUrl
+                product.ImageUrl = $"/Uploads/Products/{uniqueFileName}";
+                product.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                // Log the action
+                await _auditService.LogAsync(
+                    ActionType.UPDATE,
+                    "Product",
+                    product.Id.ToString(),
+                    null,
+                    System.Text.Json.JsonSerializer.Serialize(new { ImageUrl = product.ImageUrl }),
+                    $"Product image uploaded: {product.Name}",
+                    User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+                    User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                );
+
+                return Ok(ResponseHelper.Success(new
+                {
+                    imageUrl = product.ImageUrl,
+                    fileName = uniqueFileName,
+                    fileSize = image.Length,
+                    message = "Image uploaded successfully"
+                }));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading product image");
+                return StatusCode(500, ResponseHelper.Error<object>($"Error uploading image: {ex.Message}", 500));
+            }
+        }
+
+        /// <summary>
+        /// Delete product image (Admin only)
+        /// </summary>
+        [HttpDelete("{id}/image")]
+        [Authorize(Roles = Roles.Admin)]
+        public async Task<IActionResult> DeleteProductImage(int id)
+        {
+            try
+            {
+                var product = await _context.Products.FindAsync(id);
+                if (product == null)
+                {
+                    return NotFound(ResponseHelper.Error<object>("Product not found", 404));
+                }
+
+                if (string.IsNullOrEmpty(product.ImageUrl))
+                {
+                    return BadRequest(ResponseHelper.Error<object>("Product has no image to delete"));
+                }
+
+                // Delete physical file
+                var imagePath = Path.Combine(_environment.ContentRootPath, product.ImageUrl.TrimStart('/'));
+                if (System.IO.File.Exists(imagePath))
+                {
+                    try
+                    {
+                        System.IO.File.Delete(imagePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to delete product image file: {ImagePath}", imagePath);
+                    }
+                }
+
+                // Update product record
+                var oldImageUrl = product.ImageUrl;
+                product.ImageUrl = null;
+                product.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                // Log the action
+                await _auditService.LogAsync(
+                    ActionType.UPDATE,
+                    "Product",
+                    product.Id.ToString(),
+                    System.Text.Json.JsonSerializer.Serialize(new { ImageUrl = oldImageUrl }),
+                    System.Text.Json.JsonSerializer.Serialize(new { ImageUrl = (string?)null }),
+                    $"Product image deleted: {product.Name}",
+                    User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+                    User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                );
+
+                return Ok(ResponseHelper.Success(new { message = "Image deleted successfully" }));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting product image");
+                return StatusCode(500, ResponseHelper.Error<object>($"Error deleting image: {ex.Message}", 500));
             }
         }
     }

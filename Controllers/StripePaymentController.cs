@@ -58,31 +58,37 @@ namespace JWTAuthAPI.Controllers
 
             try
             {
-                var stripeSignature = Request.Headers["Stripe-Signature"];
+                var stripeSignature = Request.Headers["Stripe-Signature"].ToString();
                 var webhookSecret = _configuration["StripeSettings:WebhookSecret"];
 
+                // SECURITY: Always require webhook signature validation
                 if (string.IsNullOrWhiteSpace(webhookSecret))
                 {
-                    _logger.LogWarning("Webhook secret is not configured. Processing webhook without validation.");
-                    // For development, process the event without validation
-                    var eventWithoutValidation = EventUtility.ParseEvent(json);
-                    var result = await _stripePaymentService.HandleWebhookAsync(eventWithoutValidation);
-                    return result.IsSuccess ? Ok() : BadRequest(result.ErrorMessage);
+                    _logger.LogError("Webhook secret is not configured. Rejecting webhook.");
+                    return BadRequest(new { error = "Webhook secret not configured" });
                 }
 
+                if (string.IsNullOrWhiteSpace(stripeSignature))
+                {
+                    _logger.LogWarning("Webhook received without signature header");
+                    return BadRequest(new { error = "Missing signature" });
+                }
+
+                // Validate webhook signature
                 var stripeEvent = EventUtility.ConstructEvent(json, stripeSignature, webhookSecret);
-                var validatedResult = await _stripePaymentService.HandleWebhookAsync(stripeEvent);
-                return validatedResult.IsSuccess ? Ok() : BadRequest(validatedResult.ErrorMessage);
+                var result = await _stripePaymentService.HandleWebhookAsync(stripeEvent);
+
+                return result.IsSuccess ? Ok() : BadRequest(result.ErrorMessage);
             }
             catch (StripeException ex)
             {
-                _logger.LogError(ex, "Stripe webhook error");
-                return BadRequest(ex.Message);
+                _logger.LogError(ex, "Stripe webhook signature validation failed");
+                return BadRequest(new { error = "Invalid signature" });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Webhook processing error");
-                return StatusCode(500, "Internal server error");
+                return StatusCode(500, new { error = "Internal server error" });
             }
         }
 
