@@ -15,15 +15,18 @@ namespace JWTAuthAPI.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IAuditService _auditService;
         private readonly IEmailService _emailService;
+        private readonly ILogger<OrderController> _logger;
 
         public OrderController(
             ApplicationDbContext context,
             IAuditService auditService,
-            IEmailService emailService)
+            IEmailService emailService,
+            ILogger<OrderController> logger)
         {
             _context = context;
             _auditService = auditService;
             _emailService = emailService;
+            _logger = logger;
         }
 
         /// <summary>
@@ -154,7 +157,8 @@ namespace JWTAuthAPI.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return StatusCode(500, ResponseHelper.Error<object>($"Error placing order: {ex.Message}", 500));
+                _logger.LogError(ex, "Error placing order");
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while placing your order", 500));
             }
         }
 
@@ -418,7 +422,8 @@ namespace JWTAuthAPI.Controllers
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return StatusCode(500, ResponseHelper.Error<object>($"Error updating order status: {ex.Message}", 500));
+                _logger.LogError(ex, "Error updating order status: {OrderId}", id);
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while updating order status", 500));
             }
         }
 

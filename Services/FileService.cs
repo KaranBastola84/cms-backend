@@ -248,12 +248,20 @@ namespace JWTAuthAPI.Services
 
             var fileExtension = Path.GetExtension(file.FileName).ToLowerInvariant();
 
+            // SECURITY: Validate actual content type, not just extension
+            var contentType = file.ContentType.ToLower();
+
             // Check file extension based on document type
             if (documentType == DocumentType.Photo)
             {
                 if (!_allowedImageExtensions.Contains(fileExtension))
                 {
                     return (false, $"Invalid file type. Allowed types for photos: {string.Join(", ", _allowedImageExtensions)}");
+                }
+                // Validate content type matches extension
+                if (!contentType.StartsWith("image/"))
+                {
+                    return (false, "File content type does not match expected image format");
                 }
             }
             else
@@ -262,6 +270,15 @@ namespace JWTAuthAPI.Services
                 if (!allAllowedExtensions.Contains(fileExtension))
                 {
                     return (false, $"Invalid file type. Allowed types: {string.Join(", ", allAllowedExtensions)}");
+                }
+                // Validate content type
+                if (fileExtension == ".pdf" && contentType != "application/pdf")
+                {
+                    return (false, "File content type does not match PDF format");
+                }
+                if (_allowedImageExtensions.Contains(fileExtension) && !contentType.StartsWith("image/"))
+                {
+                    return (false, "File content type does not match expected image format");
                 }
             }
 

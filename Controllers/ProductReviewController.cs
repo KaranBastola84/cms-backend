@@ -14,11 +14,16 @@ namespace JWTAuthAPI.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly IAuditService _auditService;
+        private readonly ILogger<ProductReviewController> _logger;
 
-        public ProductReviewController(ApplicationDbContext context, IAuditService auditService)
+        public ProductReviewController(
+            ApplicationDbContext context,
+            IAuditService auditService,
+            ILogger<ProductReviewController> logger)
         {
             _context = context;
             _auditService = auditService;
+            _logger = logger;
         }
 
         /// <summary>
@@ -83,7 +88,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error submitting review: {ex.Message}", 500));
+                _logger.LogError(ex, "Error submitting review");
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while submitting your review", 500));
             }
         }
 

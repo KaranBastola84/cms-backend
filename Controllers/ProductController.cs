@@ -117,7 +117,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error retrieving products: {ex.Message}", 500));
+                _logger.LogError(ex, "Error retrieving products");
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while retrieving products", 500));
             }
         }
 
@@ -159,7 +160,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error retrieving product: {ex.Message}", 500));
+                _logger.LogError(ex, "Error retrieving product by ID: {ProductId}", id);
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while retrieving the product", 500));
             }
         }
 
@@ -197,7 +199,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error retrieving featured products: {ex.Message}", 500));
+                _logger.LogError(ex, "Error retrieving featured products");
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while retrieving featured products", 500));
             }
         }
 
@@ -318,7 +321,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error creating product: {ex.Message}", 500));
+                _logger.LogError(ex, "Error creating product");
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while creating the product", 500));
             }
         }
 
@@ -408,7 +412,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error updating product: {ex.Message}", 500));
+                _logger.LogError(ex, "Error updating product: {ProductId}", id);
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while updating the product", 500));
             }
         }
 
@@ -466,7 +471,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error updating stock: {ex.Message}", 500));
+                _logger.LogError(ex, "Error updating stock for product: {ProductId}", id);
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while updating stock", 500));
             }
         }
 
@@ -572,6 +578,13 @@ namespace JWTAuthAPI.Controllers
                 if (!_allowedImageExtensions.Contains(fileExtension))
                 {
                     return BadRequest(ResponseHelper.Error<object>($"Invalid file type. Allowed types: {string.Join(", ", _allowedImageExtensions)}"));
+                }
+
+                // SECURITY: Validate content type matches expected image format
+                var contentType = image.ContentType.ToLower();
+                if (!contentType.StartsWith("image/"))
+                {
+                    return BadRequest(ResponseHelper.Error<object>("File content type does not match expected image format"));
                 }
 
                 // Create Products folder if it doesn't exist
