@@ -1028,6 +1028,91 @@ namespace JWTAuthAPI.Services
                     });
                 }
 
+                // 9. NEW ORDERS - Pending orders (last 24 hours)
+                var newOrders = await _context.Orders
+                    .Where(o => o.Status == OrderStatus.Pending && o.OrderDate >= yesterday)
+                    .OrderByDescending(o => o.OrderDate)
+                    .Take(20)
+                    .ToListAsync();
+
+                foreach (var order in newOrders)
+                {
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"order-new-{order.Id}",
+                        Type = "order",
+                        Severity = "info",
+                        Title = "New Order Received",
+                        Message = $"Order {order.OrderNumber} from {order.CustomerName} - ${order.TotalAmount:N2}",
+                        Timestamp = order.OrderDate,
+                        ActionUrl = $"/orders/{order.Id}",
+                        RelatedId = order.Id,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "amount", order.TotalAmount.ToString() },
+                            { "customer", order.CustomerEmail }
+                        }
+                    });
+                }
+
+                // 10. LOW STOCK ALERTS - Critical (stock below threshold)
+                var lowStockProducts = await _context.Products
+                    .Where(p => p.IsActive && p.StockQuantity <= p.LowStockThreshold)
+                    .OrderBy(p => p.StockQuantity)
+                    .Take(10)
+                    .ToListAsync();
+
+                foreach (var product in lowStockProducts)
+                {
+                    var severity = product.StockQuantity == 0 ? "critical" : "warning";
+                    var title = product.StockQuantity == 0 ? "Out of Stock" : "Low Stock Alert";
+
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"stock-low-{product.Id}",
+                        Type = "low_stock",
+                        Severity = severity,
+                        Title = title,
+                        Message = $"{product.Name} - Stock: {product.StockQuantity} (Threshold: {product.LowStockThreshold})",
+                        Timestamp = product.UpdatedAt,
+                        ActionUrl = $"/products/{product.Id}",
+                        RelatedId = product.Id,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "stock", product.StockQuantity.ToString() },
+                            { "threshold", product.LowStockThreshold.ToString() }
+                        }
+                    });
+                }
+
+                // 11. NEW PRODUCT REVIEWS - Pending approval
+                var pendingReviews = await _context.ProductReviews
+                    .Include(r => r.Product)
+                    .Where(r => !r.IsApproved && r.CreatedAt >= now.AddDays(-7))
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Take(10)
+                    .ToListAsync();
+
+                foreach (var review in pendingReviews)
+                {
+                    notifications.Add(new NotificationDto
+                    {
+                        Id = $"review-pending-{review.Id}",
+                        Type = "review",
+                        Severity = "info",
+                        Title = "New Product Review",
+                        Message = $"{review.CustomerName} reviewed {review.Product.Name} ({review.Rating}★)",
+                        Timestamp = review.CreatedAt,
+                        ActionUrl = $"/reviews/{review.Id}",
+                        RelatedId = review.Id,
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "rating", review.Rating.ToString() },
+                            { "product", review.Product.Name }
+                        }
+                    });
+                }
+
                 // Sort all notifications by timestamp (newest first) and take limit
                 var sortedNotifications = notifications
                     .OrderByDescending(n => n.Timestamp)
