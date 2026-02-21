@@ -118,6 +118,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Enable serving static files from Uploads directory
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
+        Path.Combine(app.Environment.ContentRootPath, "Uploads")),
+    RequestPath = "/Uploads"
+});
+
 // Enable CORS
 app.UseCors("AllowAll");
 
