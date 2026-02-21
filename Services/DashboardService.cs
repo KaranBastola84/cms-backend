@@ -84,13 +84,59 @@ namespace JWTAuthAPI.Services
                     Closed = inquiries.Count(i => i.Status == InquiryStatus.Closed)
                 };
 
+                // Get inventory statistics
+                var products = await _context.Products.ToListAsync();
+                var orders = await _context.Orders.ToListAsync();
+                var reviews = await _context.ProductReviews.ToListAsync();
+
+                var todayDate = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+                var ordersToday = orders.Where(o => o.OrderDate.Date == todayDate).ToList();
+                var ordersThisWeek = orders.Where(o => o.OrderDate >= weekAgo).ToList();
+                var ordersThisMonth = orders.Where(o => o.OrderDate >= monthStart).ToList();
+
+                var deliveredOrders = orders.Where(o => o.Status == OrderStatus.Delivered).ToList();
+                var approvedReviews = reviews.Where(r => r.IsApproved).ToList();
+
+                var inventoryStats = new InventoryStatistics
+                {
+                    // Product metrics
+                    TotalProducts = products.Count,
+                    ActiveProducts = products.Count(p => p.IsActive),
+                    OutOfStock = products.Count(p => p.StockQuantity == 0),
+                    LowStock = products.Count(p => p.StockQuantity > 0 && p.StockQuantity <= p.LowStockThreshold),
+
+                    // Order metrics
+                    TotalOrders = orders.Count,
+                    PendingOrders = orders.Count(o => o.Status == OrderStatus.Pending),
+                    ContactedOrders = orders.Count(o => o.Status == OrderStatus.Contacted),
+                    ConfirmedOrders = orders.Count(o => o.Status == OrderStatus.Confirmed),
+                    DeliveredOrders = deliveredOrders.Count,
+                    OrdersToday = ordersToday.Count,
+                    OrdersThisWeek = ordersThisWeek.Count,
+                    OrdersThisMonth = ordersThisMonth.Count,
+
+                    // Revenue metrics (only from delivered orders)
+                    TotalRevenue = deliveredOrders.Any() ? deliveredOrders.Sum(o => o.TotalAmount) : 0,
+                    RevenueToday = ordersToday.Where(o => o.Status == OrderStatus.Delivered).Sum(o => o.TotalAmount),
+                    RevenueThisWeek = ordersThisWeek.Where(o => o.Status == OrderStatus.Delivered).Sum(o => o.TotalAmount),
+                    RevenueThisMonth = ordersThisMonth.Where(o => o.Status == OrderStatus.Delivered).Sum(o => o.TotalAmount),
+                    AverageOrderValue = deliveredOrders.Any() ? Math.Round(deliveredOrders.Average(o => o.TotalAmount), 2) : 0,
+
+                    // Review metrics
+                    TotalReviews = reviews.Count,
+                    PendingReviews = reviews.Count(r => !r.IsApproved),
+                    ApprovedReviews = approvedReviews.Count,
+                    AverageRating = approvedReviews.Any() ? Math.Round(approvedReviews.Average(r => r.Rating), 1) : 0
+                };
+
                 var overview = new AdminDashboardOverviewDto
                 {
                     Students = studentStats,
                     Courses = courseStats,
                     Batches = batchStats,
                     Staff = staffStats,
-                    Inquiries = inquiryStats
+                    Inquiries = inquiryStats,
+                    Inventory = inventoryStats
                 };
 
                 return ResponseHelper.Success(overview);
