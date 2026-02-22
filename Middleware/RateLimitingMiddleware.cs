@@ -11,12 +11,12 @@ namespace JWTAuthAPI.Middleware
         // Configuration: requests per minute for different endpoint types
         private readonly Dictionary<string, int> _rateLimits = new()
         {
-            { "/api/auth/login", 5 },              // 5 login attempts per minute
-            { "/api/order", 10 },                   // 10 orders per minute (public)
+            { "/api/auth/login", 10 },              // 5 login attempts per minute
+            { "/api/order", 100 },                   // 10 orders per minute (public)
             { "/api/productreview", 10 },           // 10 reviews per minute
-            { "/api/inquiry", 10 },                 // 10 inquiries per minute
-            { "/api/staffmanagement/send-otp", 3 }, // 3 OTP requests per minute
-            { "/api/trainermanagement/send-otp", 3 } // 3 OTP requests per minute
+            { "/api/inquiry", 100 },                 // 10 inquiries per minute
+            { "/api/staffmanagement/send-otp", 5 }, // 3 OTP requests per minute
+            { "/api/trainermanagement/send-otp", 5 } // 3 OTP requests per minute
         };
 
         private const int DefaultRateLimit = 100; // Default: 100 requests per minute
