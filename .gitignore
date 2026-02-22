@@ -31,3 +31,6 @@ Thumbs.db
 # Secrets
 appsettings.Development.json
 appsettings.Local.json
+
+# Uploads
+Uploads
