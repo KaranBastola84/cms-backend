@@ -13,7 +13,7 @@ namespace JWTAuthAPI.Middleware
         {
             { "/api/auth/login", 10 },              // 5 login attempts per minute
             { "/api/order", 100 },                   // 10 orders per minute (public)
-            { "/api/productreview", 10 },           // 10 reviews per minute
+            { "/api/productreview", 100 },           // 100 reviews per minute
             { "/api/inquiry", 100 },                 // 10 inquiries per minute
             { "/api/staffmanagement/send-otp", 5 }, // 3 OTP requests per minute
             { "/api/trainermanagement/send-otp", 5 } // 3 OTP requests per minute
