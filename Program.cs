@@ -35,7 +35,11 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddControllers(); // Add support for controllers
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    }); // Add support for controllers with string enum serialization
 builder.Services.AddEndpointsApiExplorer(); // Add support for API endpoint exploration
 
 // Configure rate limiting to prevent abuse
