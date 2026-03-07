@@ -194,6 +194,94 @@ namespace JWTAuthAPI.Services
             }
         }
 
+        public async Task<ApiResponse<StudentDetailDto>> GetStudentDetailAsync(int studentId)
+        {
+            try
+            {
+                var student = await _context.Students.FindAsync(studentId);
+
+                if (student == null)
+                {
+                    return ResponseHelper.Error<StudentDetailDto>("Student not found");
+                }
+
+                // Fetch Stripe payments for this student
+                var payments = await _context.StripePayments
+                    .Where(p => p.StudentId == studentId)
+                    .OrderByDescending(p => p.CreatedAt)
+                    .ToListAsync();
+
+                // Fetch documents for this student
+                var documents = await _context.StudentDocuments
+                    .Where(d => d.StudentId == studentId)
+                    .OrderByDescending(d => d.UploadedAt)
+                    .ToListAsync();
+
+                var paidPayments = payments.Where(p => p.Status == PaymentStatus.Paid).ToList();
+
+                var detail = new StudentDetailDto
+                {
+                    StudentId = student.StudentId,
+                    Name = student.Name,
+                    Email = student.Email,
+                    Phone = student.Phone,
+                    CourseId = student.CourseId,
+                    BatchId = student.BatchId,
+                    Status = student.Status.ToString(),
+                    Address = student.Address,
+                    EmergencyContact = student.EmergencyContact,
+                    CreatedAt = student.CreatedAt,
+                    UpdatedAt = student.UpdatedAt,
+                    AdmissionDate = student.AdmissionDate,
+                    FeesPaid = student.FeesPaid,
+                    FeesTotal = student.FeesTotal,
+                    FeesRemaining = student.FeesTotal - student.FeesPaid,
+                    ReceiptNumber = student.ReceiptNumber,
+
+                    // Payment summary
+                    TotalPayments = payments.Count,
+                    TotalAmountPaid = paidPayments.Sum(p => p.Amount),
+                    RecentPayments = payments.Take(5).Select(p => new StripePaymentResponseDto
+                    {
+                        StripePaymentId = p.StripePaymentId,
+                        PaymentIntentId = p.PaymentIntentId,
+                        ClientSecret = p.ClientSecret ?? string.Empty,
+                        StudentId = p.StudentId,
+                        InstallmentId = p.InstallmentId,
+                        Amount = p.Amount,
+                        Currency = p.Currency,
+                        Status = p.Status,
+                        StatusText = p.Status.ToString(),
+                        PaymentMethod = p.PaymentMethod,
+                        ErrorMessage = p.ErrorMessage,
+                        CreatedAt = p.CreatedAt
+                    }).ToList(),
+
+                    // Document summary
+                    TotalDocuments = documents.Count,
+                    Documents = documents.Select(d => new StudentDocumentDto
+                    {
+                        DocumentId = d.DocumentId,
+                        StudentId = d.StudentId,
+                        DocumentType = d.DocumentType.ToString(),
+                        FileName = d.FileName,
+                        FileSize = d.FileSize,
+                        ContentType = d.ContentType,
+                        UploadedAt = d.UploadedAt,
+                        Description = d.Description,
+                        DownloadUrl = $"/api/StudentDocument/{d.DocumentId}/download"
+                    }).ToList()
+                };
+
+                return ResponseHelper.Success(detail);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving student detail");
+                return ResponseHelper.Error<StudentDetailDto>("An error occurred while retrieving the student detail");
+            }
+        }
+
         public async Task<ApiResponse<List<StudentDto>>> GetAllStudentsAsync()
         {
             try
