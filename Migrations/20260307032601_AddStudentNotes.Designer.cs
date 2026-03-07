@@ -3,6 +3,7 @@ using System;
 using JWTAuthAPI.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace cms_backend.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260307032601_AddStudentNotes")]
+    partial class AddStudentNotes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -248,41 +251,6 @@ namespace cms_backend.Migrations
                     b.HasIndex("TrainerId");
 
                     b.ToTable("Batches");
-                });
-
-            modelBuilder.Entity("JWTAuthAPI.Models.CashPayment", b =>
-                {
-                    b.Property<int>("CashPaymentId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("CashPaymentId"));
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("numeric");
-
-                    b.Property<DateTime>("PaidAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ProcessedBy")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Remarks")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<int>("StudentId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("CashPaymentId");
-
-                    b.HasIndex("PaidAt");
-
-                    b.HasIndex("StudentId");
-
-                    b.ToTable("CashPayments");
                 });
 
             modelBuilder.Entity("JWTAuthAPI.Models.Course", b =>
@@ -882,30 +850,6 @@ namespace cms_backend.Migrations
                     b.ToTable("Receipts");
                 });
 
-            modelBuilder.Entity("JWTAuthAPI.Models.RolePermission", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("PermissionKey")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Role", "PermissionKey")
-                        .IsUnique();
-
-                    b.ToTable("RolePermissions");
-                });
-
             modelBuilder.Entity("JWTAuthAPI.Models.StripePayment", b =>
                 {
                     b.Property<int>("StripePaymentId")
@@ -1183,32 +1127,6 @@ namespace cms_backend.Migrations
                     b.ToTable("UserNotificationReads");
                 });
 
-            modelBuilder.Entity("JWTAuthAPI.Models.UserPermission", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("IsGranted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("PermissionKey")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "PermissionKey")
-                        .IsUnique();
-
-                    b.ToTable("UserPermissions");
-                });
-
             modelBuilder.Entity("JWTAuthAPI.Models.Attendance", b =>
                 {
                     b.HasOne("JWTAuthAPI.Models.Batch", "Batch")
@@ -1243,17 +1161,6 @@ namespace cms_backend.Migrations
                     b.Navigation("Course");
 
                     b.Navigation("Trainer");
-                });
-
-            modelBuilder.Entity("JWTAuthAPI.Models.CashPayment", b =>
-                {
-                    b.HasOne("JWTAuthAPI.Models.Student", "Student")
-                        .WithMany()
-                        .HasForeignKey("StudentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Student");
                 });
 
             modelBuilder.Entity("JWTAuthAPI.Models.FeeStructure", b =>
@@ -1423,17 +1330,6 @@ namespace cms_backend.Migrations
                 });
 
             modelBuilder.Entity("JWTAuthAPI.Models.UserNotificationRead", b =>
-                {
-                    b.HasOne("JWTAuthAPI.Models.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("JWTAuthAPI.Models.UserPermission", b =>
                 {
                     b.HasOne("JWTAuthAPI.Models.ApplicationUser", "User")
                         .WithMany()

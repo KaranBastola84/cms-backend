@@ -52,6 +52,9 @@ namespace JWTAuthAPI.Models
 
         [StringLength(50)]
         public string? EmergencyContact { get; set; }
+
+        [StringLength(1000)]
+        public string? Notes { get; set; }
     }
 
     public enum StudentStatus

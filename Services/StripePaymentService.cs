@@ -12,6 +12,7 @@ namespace JWTAuthAPI.Services
         private readonly ApplicationDbContext _context;
         private readonly IAuditService _auditService;
         private readonly IPaymentPlanService _paymentPlanService;
+        private readonly IStudentService _studentService;
         private readonly ILogger<StripePaymentService> _logger;
         private readonly StripeSettings _stripeSettings;
 
@@ -19,12 +20,14 @@ namespace JWTAuthAPI.Services
             ApplicationDbContext context,
             IAuditService auditService,
             IPaymentPlanService paymentPlanService,
+            IStudentService studentService,
             ILogger<StripePaymentService> logger,
             IOptions<StripeSettings> stripeSettings)
         {
             _context = context;
             _auditService = auditService;
             _paymentPlanService = paymentPlanService;
+            _studentService = studentService;
             _logger = logger;
             _stripeSettings = stripeSettings.Value;
 
@@ -298,6 +301,9 @@ namespace JWTAuthAPI.Services
                     };
 
                     await _paymentPlanService.PayInstallmentAsync(payment.InstallmentId.Value, payDto, "System");
+
+                    // Complete admission if student is still PendingPayment
+                    await CompleteStudentAdmissionIfPendingAsync(payment.StudentId);
                 }
 
                 var response = MapToResponseDto(payment);
@@ -336,6 +342,9 @@ namespace JWTAuthAPI.Services
                     };
 
                     await _paymentPlanService.PayInstallmentAsync(payment.InstallmentId.Value, payDto, "System");
+
+                    // Complete admission if student is still PendingPayment
+                    await CompleteStudentAdmissionIfPendingAsync(payment.StudentId);
                 }
 
                 // Log success
@@ -372,6 +381,23 @@ namespace JWTAuthAPI.Services
                     System.Text.Json.JsonSerializer.Serialize(payment),
                     $"Payment failed: {payment.ErrorMessage}"
                 );
+            }
+        }
+
+        private async Task CompleteStudentAdmissionIfPendingAsync(int studentId)
+        {
+            try
+            {
+                var student = await _context.Students.FindAsync(studentId);
+                if (student != null && student.Status == StudentStatus.PendingPayment)
+                {
+                    await _studentService.CompleteAdmissionAsync(studentId, "System");
+                    _logger.LogInformation("Auto-completed admission for student {StudentId} after successful payment", studentId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to auto-complete admission for student {StudentId}", studentId);
             }
         }
 

@@ -43,14 +43,11 @@ namespace JWTAuthAPI.Services
                     return ResponseHelper.Error<StudentDto>("A student with this email already exists");
                 }
 
-                // Validate batch capacity if batch is assigned (with row lock to prevent race condition)
-                if (createDto.BatchId.HasValue && createDto.BatchId.Value > 0)
+                // Validate batch capacity (with row lock to prevent race condition)
+                var capacityCheck = await ValidateBatchCapacityAsync(createDto.BatchId, null);
+                if (!capacityCheck.IsSuccess)
                 {
-                    var capacityCheck = await ValidateBatchCapacityAsync(createDto.BatchId.Value, null);
-                    if (!capacityCheck.IsSuccess)
-                    {
-                        return ResponseHelper.Error<StudentDto>(capacityCheck.ErrorMessage.FirstOrDefault() ?? "Batch capacity validation failed");
-                    }
+                    return ResponseHelper.Error<StudentDto>(capacityCheck.ErrorMessage.FirstOrDefault() ?? "Batch capacity validation failed");
                 }
 
                 var student = new Student
@@ -62,9 +59,10 @@ namespace JWTAuthAPI.Services
                     BatchId = createDto.BatchId,
                     Address = createDto.Address,
                     EmergencyContact = createDto.EmergencyContact,
-                    Status = StudentStatus.PendingPayment,  // Changed: Student pending until first payment
+                    Notes = createDto.Notes,
+                    Status = StudentStatus.PendingPayment,
                     AdmissionDate = null,  // Will be set when payment is made
-                    FeesTotal = createDto.FeesTotal ?? 0,
+                    FeesTotal = createDto.FeesTotal,
                     FeesPaid = createDto.FeesPaid ?? 0,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -77,17 +75,7 @@ namespace JWTAuthAPI.Services
                 _context.Students.Add(student);
                 await _context.SaveChangesAsync();
 
-                // Send credentials via email
-                try
-                {
-                    await _emailService.SendStudentCredentialsEmailAsync(student.Email, student.Name, tempPassword);
-                }
-                catch (Exception emailEx)
-                {
-                    _logger.LogWarning(emailEx, "Failed to send credentials email to {Email}", student.Email);
-                }
-
-                // Note: Admission confirmation email will be sent after payment is completed
+                // No email at registration — credentials will be sent after payment
 
                 // Log the action
                 await _auditService.LogAsync(
@@ -96,14 +84,14 @@ namespace JWTAuthAPI.Services
                     student.StudentId.ToString(),
                     null,
                     $"Created new student (pending payment): {student.Name} ({student.Email})",
-                    $"Temporary password sent to email. Awaiting payment confirmation.",
+                    $"Awaiting payment confirmation.",
                     createdBy
                 );
 
                 await transaction.CommitAsync();
 
                 var studentDto = MapToDto(student);
-                return ResponseHelper.Success(studentDto, "Student registered successfully. Please complete payment to confirm admission. Login credentials sent to email.");
+                return ResponseHelper.Success(studentDto, "Student registered successfully. Please complete payment to confirm admission.");
             }
             catch (Exception ex)
             {
@@ -138,12 +126,16 @@ namespace JWTAuthAPI.Services
                 student.AdmissionDate = DateTime.UtcNow;
                 student.UpdatedAt = DateTime.UtcNow;
 
+                // Generate fresh credentials for the student
+                var tempPassword = GenerateTemporaryPassword();
+                student.PasswordHash = _passwordHasher.HashPassword(student, tempPassword);
+
                 await _context.SaveChangesAsync();
 
-                // Send admission confirmation email
+                // Send single combined email with admission confirmation + credentials
                 try
                 {
-                    await _emailService.SendAdmissionConfirmationEmailAsync(student.Email, student);
+                    await _emailService.SendAdmissionConfirmationEmailAsync(student.Email, student, tempPassword);
                 }
                 catch (Exception emailEx)
                 {
@@ -191,6 +183,116 @@ namespace JWTAuthAPI.Services
             {
                 _logger.LogError(ex, "Error retrieving student");
                 return ResponseHelper.Error<StudentDto>("An error occurred while retrieving the student");
+            }
+        }
+
+        public async Task<ApiResponse<StudentDetailDto>> GetStudentDetailAsync(int studentId)
+        {
+            try
+            {
+                var student = await _context.Students.FindAsync(studentId);
+
+                if (student == null)
+                {
+                    return ResponseHelper.Error<StudentDetailDto>("Student not found");
+                }
+
+                // Fetch course and batch names
+                string? courseName = null;
+                decimal courseFee = 0;
+                if (student.CourseId.HasValue)
+                {
+                    var course = await _context.Courses.FindAsync(student.CourseId.Value);
+                    courseName = course?.Name;
+                    courseFee = course?.Fees ?? 0;
+                }
+
+                string? batchName = null;
+                if (student.BatchId.HasValue)
+                {
+                    var batch = await _context.Batches.FindAsync(student.BatchId.Value);
+                    batchName = batch?.Name;
+                }
+
+                // Fetch Stripe payments for this student
+                var payments = await _context.StripePayments
+                    .Where(p => p.StudentId == studentId)
+                    .OrderByDescending(p => p.CreatedAt)
+                    .ToListAsync();
+
+                // Fetch documents for this student
+                var documents = await _context.StudentDocuments
+                    .Where(d => d.StudentId == studentId)
+                    .OrderByDescending(d => d.UploadedAt)
+                    .ToListAsync();
+
+                var paidPayments = payments.Where(p => p.Status == PaymentStatus.Paid).ToList();
+
+                var detail = new StudentDetailDto
+                {
+                    StudentId = student.StudentId,
+                    Name = student.Name,
+                    Email = student.Email,
+                    Phone = student.Phone,
+                    CourseId = student.CourseId,
+                    CourseName = courseName,
+                    BatchId = student.BatchId,
+                    BatchName = batchName,
+                    Status = student.Status.ToString(),
+                    Address = student.Address,
+                    EmergencyContact = student.EmergencyContact,
+                    Notes = student.Notes,
+                    CreatedAt = student.CreatedAt,
+                    UpdatedAt = student.UpdatedAt,
+                    AdmissionDate = student.AdmissionDate,
+                    FeesPaid = student.FeesPaid,
+                    FeesTotal = student.FeesTotal,
+                    CourseFee = courseFee,
+                    FeesRemaining = student.FeesTotal - student.FeesPaid,
+                    ReceiptNumber = student.ReceiptNumber,
+
+                    // Payment summary
+                    TotalPayments = payments.Count,
+                    TotalAmountPaid = paidPayments.Sum(p => p.Amount),
+                    RecentPayments = payments.Take(5).Select(p => new StripePaymentResponseDto
+                    {
+                        StripePaymentId = p.StripePaymentId,
+                        PaymentIntentId = p.PaymentIntentId,
+                        ClientSecret = p.ClientSecret ?? string.Empty,
+                        StudentId = p.StudentId,
+                        InstallmentId = p.InstallmentId,
+                        Amount = p.Amount,
+                        Currency = p.Currency,
+                        Status = p.Status,
+                        StatusText = p.Status.ToString(),
+                        PaymentMethod = p.PaymentMethod,
+                        ErrorMessage = p.ErrorMessage,
+                        CreatedAt = p.CreatedAt
+                    }).ToList(),
+
+                    // Document summary
+                    TotalDocuments = documents.Count,
+                    RequiredDocuments = 3,
+                    Documents = documents.Select(d => new StudentDocumentDto
+                    {
+                        DocumentId = d.DocumentId,
+                        StudentId = d.StudentId,
+                        DocumentType = d.DocumentType.ToString(),
+                        FileName = d.FileName,
+                        FileSize = d.FileSize,
+                        ContentType = d.ContentType,
+                        UploadedAt = d.UploadedAt,
+                        Description = d.Description,
+                        DownloadUrl = $"/api/StudentDocument/{d.DocumentId}/download"
+                    }).ToList()
+                };
+
+                return ResponseHelper.Success(detail);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving student detail");
+                return ResponseHelper.Error<StudentDetailDto>("An error occurred while retrieving the student detail");
             }
         }
 
@@ -317,6 +419,12 @@ namespace JWTAuthAPI.Services
                 {
                     changes.Add($"Emergency contact updated");
                     student.EmergencyContact = updateDto.EmergencyContact;
+                }
+
+                if (updateDto.Notes != null && updateDto.Notes != student.Notes)
+                {
+                    changes.Add($"Notes updated");
+                    student.Notes = updateDto.Notes;
                 }
 
                 if (updateDto.DocumentsPath != null && updateDto.DocumentsPath != student.DocumentsPath)
@@ -460,6 +568,154 @@ namespace JWTAuthAPI.Services
             }
         }
 
+        public async Task<ApiResponse<RegistrationSummaryDto>> GetRegistrationSummaryAsync(int studentId)
+        {
+            try
+            {
+                var student = await _context.Students.FindAsync(studentId);
+
+                if (student == null)
+                {
+                    return ResponseHelper.Error<RegistrationSummaryDto>("Student not found");
+                }
+
+                string? courseName = null;
+                decimal courseFee = 0;
+                if (student.CourseId.HasValue)
+                {
+                    var course = await _context.Courses.FindAsync(student.CourseId.Value);
+                    courseName = course?.Name;
+                    courseFee = course?.Fees ?? 0;
+                }
+
+                string? batchName = null;
+                if (student.BatchId.HasValue)
+                {
+                    var batch = await _context.Batches.FindAsync(student.BatchId.Value);
+                    batchName = batch?.Name;
+                }
+
+                var documents = await _context.StudentDocuments
+                    .Where(d => d.StudentId == studentId)
+                    .OrderByDescending(d => d.UploadedAt)
+                    .ToListAsync();
+
+                var summary = new RegistrationSummaryDto
+                {
+                    StudentId = student.StudentId,
+                    Name = student.Name,
+                    Email = student.Email,
+                    Phone = student.Phone,
+                    CourseName = courseName,
+                    BatchName = batchName,
+                    CourseFee = courseFee,
+                    FeesTotal = student.FeesTotal,
+                    Status = student.Status.ToString(),
+                    Notes = student.Notes,
+                    DocumentsUploaded = documents.Count,
+                    RequiredDocuments = 3,
+                    Documents = documents.Select(d => new StudentDocumentDto
+                    {
+                        DocumentId = d.DocumentId,
+                        StudentId = d.StudentId,
+                        DocumentType = d.DocumentType.ToString(),
+                        FileName = d.FileName,
+                        FileSize = d.FileSize,
+                        ContentType = d.ContentType,
+                        UploadedAt = d.UploadedAt,
+                        Description = d.Description,
+                        DownloadUrl = $"/api/StudentDocument/{d.DocumentId}/download"
+                    }).ToList()
+                };
+
+                return ResponseHelper.Success(summary);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving registration summary");
+                return ResponseHelper.Error<RegistrationSummaryDto>("An error occurred while retrieving the registration summary");
+            }
+        }
+
+        public async Task<ApiResponse<StudentDto>> ProcessCashPaymentAsync(int studentId, CashPaymentDto dto, string processedBy)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var student = await _context.Students.FindAsync(studentId);
+
+                if (student == null)
+                {
+                    return ResponseHelper.Error<StudentDto>("Student not found");
+                }
+
+                if (dto.Amount <= 0)
+                {
+                    return ResponseHelper.Error<StudentDto>("Payment amount must be greater than zero");
+                }
+
+                var oldFeesPaid = student.FeesPaid;
+                student.FeesPaid += dto.Amount;
+                student.UpdatedAt = DateTime.UtcNow;
+
+                // If student is PendingPayment, complete admission
+                if (student.Status == StudentStatus.PendingPayment)
+                {
+                    student.Status = StudentStatus.Enrolled;
+                    student.AdmissionDate = DateTime.UtcNow;
+
+                    // Generate fresh credentials
+                    var tempPassword = GenerateTemporaryPassword();
+                    student.PasswordHash = _passwordHasher.HashPassword(student, tempPassword);
+
+                    // Send single combined email with admission confirmation + credentials
+                    try
+                    {
+                        await _emailService.SendAdmissionConfirmationEmailAsync(student.Email, student, tempPassword);
+                    }
+                    catch (Exception emailEx)
+                    {
+                        _logger.LogWarning(emailEx, "Failed to send admission confirmation email to {Email}", student.Email);
+                    }
+                }
+
+                // Save cash payment record so it appears in financial reports
+                var cashPaymentRecord = new CashPayment
+                {
+                    StudentId = student.StudentId,
+                    Amount = dto.Amount,
+                    Remarks = dto.Remarks,
+                    ProcessedBy = processedBy,
+                    PaidAt = DateTime.UtcNow
+                };
+                _context.CashPayments.Add(cashPaymentRecord);
+
+                await _context.SaveChangesAsync();
+
+                // Log the action
+                await _auditService.LogAsync(
+                    ActionType.UPDATE,
+                    "Student",
+                    student.StudentId.ToString(),
+                    $"FeesPaid: {oldFeesPaid}, Status: PendingPayment",
+                    $"FeesPaid: {student.FeesPaid}, Status: {student.Status}, CashAmount: {dto.Amount}",
+                    $"Cash payment of {dto.Amount} processed for {student.Name}. {dto.Remarks ?? ""}",
+                    processedBy
+                );
+
+                await transaction.CommitAsync();
+
+                var studentDto = MapToDto(student);
+                return ResponseHelper.Success(studentDto, $"Cash payment of {dto.Amount} processed successfully. Student status: {student.Status}");
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error processing cash payment for student {StudentId}", studentId);
+                return ResponseHelper.Error<StudentDto>("An error occurred while processing the cash payment");
+            }
+        }
+
         private StudentDto MapToDto(Student student)
         {
             return new StudentDto
@@ -480,8 +736,41 @@ namespace JWTAuthAPI.Services
                 FeesPaid = student.FeesPaid,
                 FeesTotal = student.FeesTotal,
                 FeesRemaining = student.FeesTotal - student.FeesPaid,
-                ReceiptNumber = student.ReceiptNumber
+                ReceiptNumber = student.ReceiptNumber,
+                Notes = student.Notes
             };
+        }
+
+        public async Task<ApiResponse<List<CashPaymentRecordDto>>> GetCashPaymentsByStudentIdAsync(int studentId)
+        {
+            try
+            {
+                var student = await _context.Students.FindAsync(studentId);
+                if (student == null)
+                    return ResponseHelper.Error<List<CashPaymentRecordDto>>("Student not found");
+
+                var payments = await _context.CashPayments
+                    .Where(c => c.StudentId == studentId)
+                    .OrderByDescending(c => c.PaidAt)
+                    .Select(c => new CashPaymentRecordDto
+                    {
+                        CashPaymentId = c.CashPaymentId,
+                        StudentId = c.StudentId,
+                        StudentName = student.Name,
+                        Amount = c.Amount,
+                        Remarks = c.Remarks,
+                        ProcessedBy = c.ProcessedBy,
+                        PaidAt = c.PaidAt
+                    })
+                    .ToListAsync();
+
+                return ResponseHelper.Success(payments);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting cash payments for student {StudentId}", studentId);
+                return ResponseHelper.Error<List<CashPaymentRecordDto>>("An error occurred while retrieving cash payments");
+            }
         }
 
         private string GenerateTemporaryPassword()

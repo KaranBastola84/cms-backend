@@ -27,6 +27,7 @@ namespace JWTAuthAPI.Data
         public DbSet<PaymentPlan> PaymentPlans { get; set; } // DbSet for Payment Plans
         public DbSet<Installment> Installments { get; set; } // DbSet for Installments
         public DbSet<StripePayment> StripePayments { get; set; } // DbSet for Stripe Payments
+        public DbSet<CashPayment> CashPayments { get; set; } // DbSet for Cash Payments
         public DbSet<FeeStructure> FeeStructures { get; set; } // DbSet for Fee Structures
         public DbSet<Transaction> Transactions { get; set; } // DbSet for Transactions
         public DbSet<UserNotificationRead> UserNotificationReads { get; set; } // DbSet for User Notification Read Status
@@ -35,6 +36,8 @@ namespace JWTAuthAPI.Data
         public DbSet<Order> Orders { get; set; } // DbSet for Orders
         public DbSet<OrderItem> OrderItems { get; set; } // DbSet for Order Items
         public DbSet<ProductReview> ProductReviews { get; set; } // DbSet for Product Reviews
+        public DbSet<RolePermission> RolePermissions { get; set; } // DbSet for Role Permissions
+        public DbSet<UserPermission> UserPermissions { get; set; } // DbSet for User Permission Overrides
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -92,6 +95,35 @@ namespace JWTAuthAPI.Data
                 .WithMany(c => c.Batches)
                 .HasForeignKey(b => b.CourseId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Configure CashPayment-Student relationship
+            modelBuilder.Entity<CashPayment>()
+                .HasOne(c => c.Student)
+                .WithMany()
+                .HasForeignKey(c => c.StudentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<CashPayment>()
+                .HasIndex(c => c.StudentId);
+
+            modelBuilder.Entity<CashPayment>()
+                .HasIndex(c => c.PaidAt);
+
+            // Configure RolePermission unique index (one permission key per role)
+            modelBuilder.Entity<RolePermission>()
+                .HasIndex(rp => new { rp.Role, rp.PermissionKey })
+                .IsUnique();
+
+            // Configure UserPermission unique index (one override per user per permission)
+            modelBuilder.Entity<UserPermission>()
+                .HasIndex(up => new { up.UserId, up.PermissionKey })
+                .IsUnique();
+
+            modelBuilder.Entity<UserPermission>()
+                .HasOne(up => up.User)
+                .WithMany()
+                .HasForeignKey(up => up.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // Configure Course-Student relationship
             modelBuilder.Entity<Student>()

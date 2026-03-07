@@ -77,16 +77,6 @@ namespace JWTAuthAPI.Services
                 {
                     student.ReceiptNumber = receiptNumber;
                     await _context.SaveChangesAsync();
-
-                    // Send admission confirmation email with receipt attached
-                    try
-                    {
-                        await _emailService.SendAdmissionConfirmationEmailAsync(student.Email, student, pdfPath);
-                    }
-                    catch (Exception emailEx)
-                    {
-                        _logger.LogWarning(emailEx, "Failed to send admission confirmation email to {Email}", student.Email);
-                    }
                 }
 
                 // Log the action

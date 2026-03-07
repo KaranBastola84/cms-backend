@@ -106,5 +106,57 @@ namespace JWTAuthAPI.Services
         {
             return principal.FindFirst(claimType)?.Value;
         }
+
+        public string GenerateStudentAccessToken(Student student)
+        {
+            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
+            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, student.StudentId.ToString()),
+                new Claim(ClaimTypes.Name, student.Name),
+                new Claim(ClaimTypes.Email, student.Email),
+                new Claim(ClaimTypes.Role, "Student"),
+                new Claim("token_type", "access")
+            };
+
+            var token = new JwtSecurityToken(
+                issuer: _config["Jwt:Issuer"],
+                audience: _config["Jwt:Audience"],
+                claims: claims,
+                notBefore: DateTime.UtcNow,
+                expires: DateTime.UtcNow.AddHours(1),
+                signingCredentials: credentials
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        public string GenerateStudentRefreshToken(Student student)
+        {
+            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
+            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, student.StudentId.ToString()),
+                new Claim(ClaimTypes.Name, student.Name),
+                new Claim(ClaimTypes.Email, student.Email),
+                new Claim(ClaimTypes.Role, "Student"),
+                new Claim("token_type", "refresh")
+            };
+
+            var token = new JwtSecurityToken(
+                issuer: _config["Jwt:Issuer"],
+                audience: _config["Jwt:Audience"],
+                claims: claims,
+                notBefore: DateTime.UtcNow,
+                expires: DateTime.UtcNow.AddDays(7),
+                signingCredentials: credentials
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
     }
 }

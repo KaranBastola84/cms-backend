@@ -12,10 +12,17 @@ namespace JWTAuthAPI.Controllers
     public class StudentController : ControllerBase
     {
         private readonly IStudentService _studentService;
+        private readonly IStripePaymentService _stripePaymentService;
+        private readonly IFileService _fileService;
 
-        public StudentController(IStudentService studentService)
+        public StudentController(
+            IStudentService studentService,
+            IStripePaymentService stripePaymentService,
+            IFileService fileService)
         {
             _studentService = studentService;
+            _stripePaymentService = stripePaymentService;
+            _fileService = fileService;
         }
 
         [HttpPost]
@@ -125,6 +132,74 @@ namespace JWTAuthAPI.Controllers
                 return BadRequest(result);
             }
 
+            return Ok(result);
+        }
+
+        [HttpGet("{id}/details")]
+        public async Task<IActionResult> GetStudentDetail(int id)
+        {
+            var result = await _studentService.GetStudentDetailAsync(id);
+
+            if (!result.IsSuccess)
+            {
+                return NotFound(result);
+            }
+
+            return Ok(result);
+        }
+
+        [HttpGet("{id}/registration-summary")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        public async Task<IActionResult> GetRegistrationSummary(int id)
+        {
+            var result = await _studentService.GetRegistrationSummaryAsync(id);
+
+            if (!result.IsSuccess)
+            {
+                return NotFound(result);
+            }
+
+            return Ok(result);
+        }
+
+        [HttpPost("{id}/cash-payment")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        public async Task<IActionResult> ProcessCashPayment(int id, [FromBody] CashPaymentDto dto)
+        {
+            if (dto.StudentId != id)
+            {
+                dto.StudentId = id;
+            }
+
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
+            var result = await _studentService.ProcessCashPaymentAsync(id, dto, userId);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(result);
+            }
+
+            return Ok(result);
+        }
+
+        [HttpGet("{id}/payments")]
+        public async Task<IActionResult> GetStudentPayments(int id)
+        {
+            var result = await _stripePaymentService.GetStripePaymentsByStudentIdAsync(id);
+            return Ok(result);
+        }
+
+        [HttpGet("{id}/cash-payments")]
+        public async Task<IActionResult> GetStudentCashPayments(int id)
+        {
+            var result = await _studentService.GetCashPaymentsByStudentIdAsync(id);
+            return result.IsSuccess ? Ok(result) : NotFound(result);
+        }
+
+        [HttpGet("{id}/documents")]
+        public async Task<IActionResult> GetStudentDocuments(int id)
+        {
+            var result = await _fileService.GetStudentDocumentsAsync(id);
             return Ok(result);
         }
     }

@@ -5,7 +5,10 @@ namespace JWTAuthAPI.Models
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public decimal TotalRevenue { get; set; }
+        public decimal StripeRevenue { get; set; }
+        public decimal CashRevenue { get; set; }
         public int TotalPayments { get; set; }
+        public int CashPaymentCount { get; set; }
         public int UniquePayingStudents { get; set; }
         public List<CourseRevenueBreakdownDto> CourseRevenues { get; set; } = new();
         public decimal AveragePaymentAmount { get; set; }
