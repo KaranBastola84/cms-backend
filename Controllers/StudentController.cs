@@ -148,6 +148,40 @@ namespace JWTAuthAPI.Controllers
             return Ok(result);
         }
 
+        [HttpGet("{id}/registration-summary")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        public async Task<IActionResult> GetRegistrationSummary(int id)
+        {
+            var result = await _studentService.GetRegistrationSummaryAsync(id);
+
+            if (!result.IsSuccess)
+            {
+                return NotFound(result);
+            }
+
+            return Ok(result);
+        }
+
+        [HttpPost("{id}/cash-payment")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        public async Task<IActionResult> ProcessCashPayment(int id, [FromBody] CashPaymentDto dto)
+        {
+            if (dto.StudentId != id)
+            {
+                dto.StudentId = id;
+            }
+
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
+            var result = await _studentService.ProcessCashPaymentAsync(id, dto, userId);
+
+            if (!result.IsSuccess)
+            {
+                return BadRequest(result);
+            }
+
+            return Ok(result);
+        }
+
         [HttpGet("{id}/payments")]
         public async Task<IActionResult> GetStudentPayments(int id)
         {

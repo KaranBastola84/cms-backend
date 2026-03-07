@@ -30,5 +30,8 @@ namespace JWTAuthAPI.Models
         public decimal? FeesTotal { get; set; }
 
         public decimal? FeesPaid { get; set; }
+
+        [StringLength(1000)]
+        public string? Notes { get; set; }
     }
 }

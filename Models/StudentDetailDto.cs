@@ -8,10 +8,13 @@ namespace JWTAuthAPI.Models
         public string Email { get; set; } = string.Empty;
         public string Phone { get; set; } = string.Empty;
         public int? CourseId { get; set; }
+        public string? CourseName { get; set; }
         public int? BatchId { get; set; }
+        public string? BatchName { get; set; }
         public string Status { get; set; } = string.Empty;
         public string? Address { get; set; }
         public string? EmergencyContact { get; set; }
+        public string? Notes { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         public DateTime? AdmissionDate { get; set; }
@@ -19,6 +22,7 @@ namespace JWTAuthAPI.Models
         // Fee summary
         public decimal FeesPaid { get; set; }
         public decimal FeesTotal { get; set; }
+        public decimal CourseFee { get; set; }
         public decimal FeesRemaining { get; set; }
         public string? ReceiptNumber { get; set; }
 
@@ -29,6 +33,31 @@ namespace JWTAuthAPI.Models
 
         // Document summary
         public int TotalDocuments { get; set; }
+        public int RequiredDocuments { get; set; }
         public List<StudentDocumentDto> Documents { get; set; } = new();
+    }
+
+    public class RegistrationSummaryDto
+    {
+        public int StudentId { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+        public string? CourseName { get; set; }
+        public string? BatchName { get; set; }
+        public decimal CourseFee { get; set; }
+        public decimal FeesTotal { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string? Notes { get; set; }
+        public int DocumentsUploaded { get; set; }
+        public int RequiredDocuments { get; set; } = 3;
+        public List<StudentDocumentDto> Documents { get; set; } = new();
+    }
+
+    public class CashPaymentDto
+    {
+        public int StudentId { get; set; }
+        public decimal Amount { get; set; }
+        public string? Remarks { get; set; }
     }
 }

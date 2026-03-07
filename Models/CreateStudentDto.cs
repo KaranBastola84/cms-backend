@@ -29,5 +29,8 @@ namespace JWTAuthAPI.Models
         public decimal? FeesTotal { get; set; }
 
         public decimal? FeesPaid { get; set; }
+
+        [StringLength(1000, ErrorMessage = "Notes cannot exceed 1000 characters")]
+        public string? Notes { get; set; }
     }
 }
