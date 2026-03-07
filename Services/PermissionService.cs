@@ -125,9 +125,9 @@ namespace JWTAuthAPI.Services
                 _context.UserPermissions.RemoveRange(existing);
 
                 var newOverrides = dto.Grant.Distinct().Select(key => new UserPermission
-                    { UserId = userId, PermissionKey = key, IsGranted = true })
+                { UserId = userId, PermissionKey = key, IsGranted = true })
                     .Concat(dto.Revoke.Distinct().Select(key => new UserPermission
-                        { UserId = userId, PermissionKey = key, IsGranted = false }));
+                    { UserId = userId, PermissionKey = key, IsGranted = false }));
 
                 await _context.UserPermissions.AddRangeAsync(newOverrides);
                 await _context.SaveChangesAsync();
