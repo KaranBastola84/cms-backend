@@ -10,7 +10,7 @@ namespace JWTAuthAPI.Services
         Task SendOTPEmailAsync(string toEmail, string fullName, string otp);
         Task SendAccountActivationEmailAsync(string toEmail, string fullName, string email);
         Task SendStudentCredentialsEmailAsync(string toEmail, string studentName, string password);
-        Task SendAdmissionConfirmationEmailAsync(string toEmail, Student student, string? receiptPath = null);
+        Task SendAdmissionConfirmationEmailAsync(string toEmail, Student student, string? tempPassword = null);
         Task SendOrderConfirmationEmailAsync(string toEmail, string customerName, string orderNumber, decimal totalAmount);
     }
 
@@ -508,7 +508,7 @@ namespace JWTAuthAPI.Services
 </html>";
         }
 
-        public async Task SendAdmissionConfirmationEmailAsync(string toEmail, Student student, string? receiptPath = null)
+        public async Task SendAdmissionConfirmationEmailAsync(string toEmail, Student student, string? tempPassword = null)
         {
             try
             {
@@ -531,17 +531,10 @@ namespace JWTAuthAPI.Services
                         From = new MailAddress(fromEmail, fromName),
                         Subject = "Welcome to Coffee School - Admission Confirmed!",
                         IsBodyHtml = true,
-                        Body = GetAdmissionConfirmationEmailBody(student)
+                        Body = GetAdmissionConfirmationEmailBody(student, tempPassword)
                     };
 
                     mailMessage.To.Add(toEmail);
-
-                    // Attach receipt if provided
-                    if (!string.IsNullOrEmpty(receiptPath) && File.Exists(receiptPath))
-                    {
-                        var attachment = new Attachment(receiptPath);
-                        mailMessage.Attachments.Add(attachment);
-                    }
 
                     await client.SendMailAsync(mailMessage);
                     _logger.LogInformation("Admission confirmation email sent successfully to {Email}", toEmail);
@@ -554,7 +547,7 @@ namespace JWTAuthAPI.Services
             }
         }
 
-        private string GetAdmissionConfirmationEmailBody(Student student)
+        private string GetAdmissionConfirmationEmailBody(Student student, string? tempPassword = null)
         {
             var admissionDate = student.AdmissionDate?.ToString("MMMM dd, yyyy") ?? DateTime.UtcNow.ToString("MMMM dd, yyyy");
             var orientationDate = student.AdmissionDate?.AddDays(7).ToString("MMMM dd, yyyy") ?? DateTime.UtcNow.AddDays(7).ToString("MMMM dd, yyyy");
@@ -667,8 +660,26 @@ namespace JWTAuthAPI.Services
 
                             <div style='background-color: #e8f5e9; padding: 20px; border-radius: 8px; margin: 30px 0; border-left: 4px solid #4caf50;'>
                                 <h3 style='color: #2e7d32; margin: 0 0 10px 0; font-size: 18px;'>✨ What's Next?</h3>
-                                <p style='color: #666; font-size: 15px; line-height: 1.6; margin: 0 0 10px 0;'>
-                                    Check your email for login credentials to access our <strong>Student Portal</strong> where you can:
+                                {(string.IsNullOrEmpty(tempPassword) ? "" : $@"
+                                <div style='background-color: #ffffff; border: 2px solid #4caf50; padding: 20px; margin: 15px 0; border-radius: 8px;'>
+                                    <h4 style='color: #333; margin: 0 0 15px 0; font-size: 16px;'>🔐 Your Student Portal Login Credentials</h4>
+                                    <table style='width: 100%; border-collapse: collapse;'>
+                                        <tr>
+                                            <td style='padding: 8px 0; color: #555; font-size: 15px;'><strong>Email:</strong></td>
+                                            <td style='padding: 8px 0; color: #333; font-family: monospace; font-size: 14px;'>{student.Email}</td>
+                                        </tr>
+                                        <tr>
+                                            <td style='padding: 8px 0; color: #555; font-size: 15px;'><strong>Temporary Password:</strong></td>
+                                            <td style='padding: 8px 0; color: #6B4423; font-family: monospace; font-size: 18px; font-weight: bold;'>{tempPassword}</td>
+                                        </tr>
+                                    </table>
+                                    <p style='margin: 15px 0 0 0; color: #856404; font-size: 13px; background-color: #fff3cd; padding: 10px; border-radius: 4px;'>
+                                        ⚠️ <strong>Important:</strong> Please change your password after your first login for security purposes.
+                                    </p>
+                                </div>
+                                ")}
+                                <p style='color: #666; font-size: 15px; line-height: 1.6; margin: 10px 0 10px 0;'>
+                                    Access our <strong>Student Portal</strong> where you can:
                                 </p>
                                 <ul style='margin: 0; padding-left: 20px; color: #666;'>
                                     <li style='margin-bottom: 8px; font-size: 14px;'>View your course schedule</li>

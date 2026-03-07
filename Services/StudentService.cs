@@ -75,17 +75,7 @@ namespace JWTAuthAPI.Services
                 _context.Students.Add(student);
                 await _context.SaveChangesAsync();
 
-                // Send credentials via email
-                try
-                {
-                    await _emailService.SendStudentCredentialsEmailAsync(student.Email, student.Name, tempPassword);
-                }
-                catch (Exception emailEx)
-                {
-                    _logger.LogWarning(emailEx, "Failed to send credentials email to {Email}", student.Email);
-                }
-
-                // Note: Admission confirmation email will be sent after payment is completed
+                // No email at registration — credentials will be sent after payment
 
                 // Log the action
                 await _auditService.LogAsync(
@@ -94,14 +84,14 @@ namespace JWTAuthAPI.Services
                     student.StudentId.ToString(),
                     null,
                     $"Created new student (pending payment): {student.Name} ({student.Email})",
-                    $"Temporary password sent to email. Awaiting payment confirmation.",
+                    $"Awaiting payment confirmation.",
                     createdBy
                 );
 
                 await transaction.CommitAsync();
 
                 var studentDto = MapToDto(student);
-                return ResponseHelper.Success(studentDto, "Student registered successfully. Please complete payment to confirm admission. Login credentials sent to email.");
+                return ResponseHelper.Success(studentDto, "Student registered successfully. Please complete payment to confirm admission.");
             }
             catch (Exception ex)
             {
@@ -136,12 +126,16 @@ namespace JWTAuthAPI.Services
                 student.AdmissionDate = DateTime.UtcNow;
                 student.UpdatedAt = DateTime.UtcNow;
 
+                // Generate fresh credentials for the student
+                var tempPassword = GenerateTemporaryPassword();
+                student.PasswordHash = _passwordHasher.HashPassword(student, tempPassword);
+
                 await _context.SaveChangesAsync();
 
-                // Send admission confirmation email
+                // Send single combined email with admission confirmation + credentials
                 try
                 {
-                    await _emailService.SendAdmissionConfirmationEmailAsync(student.Email, student);
+                    await _emailService.SendAdmissionConfirmationEmailAsync(student.Email, student, tempPassword);
                 }
                 catch (Exception emailEx)
                 {
@@ -670,10 +664,14 @@ namespace JWTAuthAPI.Services
                     student.Status = StudentStatus.Enrolled;
                     student.AdmissionDate = DateTime.UtcNow;
 
-                    // Send admission confirmation email
+                    // Generate fresh credentials
+                    var tempPassword = GenerateTemporaryPassword();
+                    student.PasswordHash = _passwordHasher.HashPassword(student, tempPassword);
+
+                    // Send single combined email with admission confirmation + credentials
                     try
                     {
-                        await _emailService.SendAdmissionConfirmationEmailAsync(student.Email, student);
+                        await _emailService.SendAdmissionConfirmationEmailAsync(student.Email, student, tempPassword);
                     }
                     catch (Exception emailEx)
                     {
