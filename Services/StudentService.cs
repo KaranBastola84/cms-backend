@@ -43,14 +43,11 @@ namespace JWTAuthAPI.Services
                     return ResponseHelper.Error<StudentDto>("A student with this email already exists");
                 }
 
-                // Validate batch capacity if batch is assigned (with row lock to prevent race condition)
-                if (createDto.BatchId.HasValue && createDto.BatchId.Value > 0)
+                // Validate batch capacity (with row lock to prevent race condition)
+                var capacityCheck = await ValidateBatchCapacityAsync(createDto.BatchId, null);
+                if (!capacityCheck.IsSuccess)
                 {
-                    var capacityCheck = await ValidateBatchCapacityAsync(createDto.BatchId.Value, null);
-                    if (!capacityCheck.IsSuccess)
-                    {
-                        return ResponseHelper.Error<StudentDto>(capacityCheck.ErrorMessage.FirstOrDefault() ?? "Batch capacity validation failed");
-                    }
+                    return ResponseHelper.Error<StudentDto>(capacityCheck.ErrorMessage.FirstOrDefault() ?? "Batch capacity validation failed");
                 }
 
                 var student = new Student
@@ -63,9 +60,9 @@ namespace JWTAuthAPI.Services
                     Address = createDto.Address,
                     EmergencyContact = createDto.EmergencyContact,
                     Notes = createDto.Notes,
-                    Status = StudentStatus.PendingPayment,  // Changed: Student pending until first payment
+                    Status = StudentStatus.PendingPayment,
                     AdmissionDate = null,  // Will be set when payment is made
-                    FeesTotal = createDto.FeesTotal ?? 0,
+                    FeesTotal = createDto.FeesTotal,
                     FeesPaid = createDto.FeesPaid ?? 0,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow

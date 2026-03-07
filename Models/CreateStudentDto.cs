@@ -16,9 +16,11 @@ namespace JWTAuthAPI.Models
         [Phone(ErrorMessage = "Invalid phone format")]
         public string Phone { get; set; } = string.Empty;
 
-        public int? CourseId { get; set; }
+        [Required(ErrorMessage = "Course is required")]
+        public int CourseId { get; set; }
 
-        public int? BatchId { get; set; }
+        [Required(ErrorMessage = "Batch is required")]
+        public int BatchId { get; set; }
 
         public string? Address { get; set; }
 
@@ -26,7 +28,9 @@ namespace JWTAuthAPI.Models
 
         public DateTime? AdmissionDate { get; set; }
 
-        public decimal? FeesTotal { get; set; }
+        [Required(ErrorMessage = "Total fees is required")]
+        [Range(0.01, double.MaxValue, ErrorMessage = "Total fees must be greater than zero")]
+        public decimal FeesTotal { get; set; }
 
         public decimal? FeesPaid { get; set; }
 
