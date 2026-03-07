@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using JWTAuthAPI.Data;
 using JWTAuthAPI.Models;
 using JWTAuthAPI.Services;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
@@ -14,12 +15,14 @@ namespace JWTAuthAPI.Controllers
         private readonly ApplicationDbContext _context;
         private readonly JwtService _jwtService;
         private readonly Services.IAuditService _auditService;
+        private readonly IPasswordHasher<Student> _studentPasswordHasher;
 
-        public AuthController(ApplicationDbContext context, JwtService jwtService, Services.IAuditService auditService)
+        public AuthController(ApplicationDbContext context, JwtService jwtService, Services.IAuditService auditService, IPasswordHasher<Student> studentPasswordHasher)
         {
             _context = context;
             _jwtService = jwtService;
             _auditService = auditService;
+            _studentPasswordHasher = studentPasswordHasher;
         }
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterDto registerDto)
@@ -138,6 +141,89 @@ namespace JWTAuthAPI.Controllers
                     refresh = refreshToken,
                     access = accessToken,
                     user = new { role = user.Role, username = user.Username }
+                }
+            });
+        }
+
+        [HttpPost("student-login")]
+        public async Task<IActionResult> StudentLogin([FromBody] StudentLoginDto loginDto)
+        {
+            var student = await _context.Students
+                .FirstOrDefaultAsync(s => s.Email == loginDto.Email);
+
+            if (student == null)
+                return Unauthorized(new ApiResponse<string>
+                {
+                    StatusCode = 401,
+                    IsSuccess = false,
+                    ErrorMessage = { "Invalid email or password" }
+                });
+
+            var verificationResult = _studentPasswordHasher.VerifyHashedPassword(student, student.PasswordHash, loginDto.Password);
+            if (verificationResult == PasswordVerificationResult.Failed)
+            {
+                await _auditService.LogAsync(
+                    ActionType.LOGIN_FAILED,
+                    "Auth",
+                    student.StudentId.ToString(),
+                    null, null,
+                    $"Failed student login attempt for email: {loginDto.Email}",
+                    student.StudentId.ToString(),
+                    student.Email
+                );
+                return Unauthorized(new ApiResponse<string>
+                {
+                    StatusCode = 401,
+                    IsSuccess = false,
+                    ErrorMessage = { "Invalid email or password" }
+                });
+            }
+
+            if (student.Status == StudentStatus.PendingPayment)
+                return Unauthorized(new ApiResponse<string>
+                {
+                    StatusCode = 401,
+                    IsSuccess = false,
+                    ErrorMessage = { "Your enrollment is pending payment. Please contact the school." }
+                });
+
+            if (student.Status == StudentStatus.Suspended || student.Status == StudentStatus.Dropped)
+                return Unauthorized(new ApiResponse<string>
+                {
+                    StatusCode = 401,
+                    IsSuccess = false,
+                    ErrorMessage = { "Your account is inactive. Please contact the school." }
+                });
+
+            var accessToken = _jwtService.GenerateStudentAccessToken(student);
+            var refreshToken = _jwtService.GenerateStudentRefreshToken(student);
+
+            await _auditService.LogAsync(
+                ActionType.LOGIN,
+                "Auth",
+                student.StudentId.ToString(),
+                null, null,
+                $"Student logged in: {student.Email}",
+                student.StudentId.ToString(),
+                student.Email
+            );
+
+            return Ok(new ApiResponse<object>
+            {
+                StatusCode = 200,
+                IsSuccess = true,
+                Result = new
+                {
+                    access = accessToken,
+                    refresh = refreshToken,
+                    user = new
+                    {
+                        studentId = student.StudentId,
+                        name = student.Name,
+                        email = student.Email,
+                        role = "Student",
+                        status = student.Status.ToString()
+                    }
                 }
             });
         }
