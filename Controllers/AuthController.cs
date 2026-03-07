@@ -16,13 +16,15 @@ namespace JWTAuthAPI.Controllers
         private readonly JwtService _jwtService;
         private readonly Services.IAuditService _auditService;
         private readonly IPasswordHasher<Student> _studentPasswordHasher;
+        private readonly Services.IPermissionService _permissionService;
 
-        public AuthController(ApplicationDbContext context, JwtService jwtService, Services.IAuditService auditService, IPasswordHasher<Student> studentPasswordHasher)
+        public AuthController(ApplicationDbContext context, JwtService jwtService, Services.IAuditService auditService, IPasswordHasher<Student> studentPasswordHasher, Services.IPermissionService permissionService)
         {
             _context = context;
             _jwtService = jwtService;
             _auditService = auditService;
             _studentPasswordHasher = studentPasswordHasher;
+            _permissionService = permissionService;
         }
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterDto registerDto)
@@ -132,6 +134,12 @@ namespace JWTAuthAPI.Controllers
                 user.Email
             );
 
+            var permissions = await _permissionService.GetRolePermissionsAsync(user.Role);
+            var userOverrides = await _permissionService.GetUserPermissionsAsync(user.Id);
+            var effectivePermissions = userOverrides.IsSuccess
+                ? userOverrides.Result!.EffectivePermissions
+                : permissions;
+
             return Ok(new ApiResponse<object>
             {
                 StatusCode = 200,
@@ -140,7 +148,14 @@ namespace JWTAuthAPI.Controllers
                 {
                     refresh = refreshToken,
                     access = accessToken,
-                    user = new { role = user.Role, username = user.Username }
+                    user = new
+                    {
+                        id = user.Id,
+                        role = user.Role,
+                        username = user.Username,
+                        email = user.Email,
+                        permissions = effectivePermissions
+                    }
                 }
             });
         }

@@ -36,6 +36,8 @@ namespace JWTAuthAPI.Data
         public DbSet<Order> Orders { get; set; } // DbSet for Orders
         public DbSet<OrderItem> OrderItems { get; set; } // DbSet for Order Items
         public DbSet<ProductReview> ProductReviews { get; set; } // DbSet for Product Reviews
+        public DbSet<RolePermission> RolePermissions { get; set; } // DbSet for Role Permissions
+        public DbSet<UserPermission> UserPermissions { get; set; } // DbSet for User Permission Overrides
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -106,6 +108,22 @@ namespace JWTAuthAPI.Data
 
             modelBuilder.Entity<CashPayment>()
                 .HasIndex(c => c.PaidAt);
+
+            // Configure RolePermission unique index (one permission key per role)
+            modelBuilder.Entity<RolePermission>()
+                .HasIndex(rp => new { rp.Role, rp.PermissionKey })
+                .IsUnique();
+
+            // Configure UserPermission unique index (one override per user per permission)
+            modelBuilder.Entity<UserPermission>()
+                .HasIndex(up => new { up.UserId, up.PermissionKey })
+                .IsUnique();
+
+            modelBuilder.Entity<UserPermission>()
+                .HasOne(up => up.User)
+                .WithMany()
+                .HasForeignKey(up => up.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // Configure Course-Student relationship
             modelBuilder.Entity<Student>()
