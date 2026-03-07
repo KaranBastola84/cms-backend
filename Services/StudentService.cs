@@ -679,6 +679,17 @@ namespace JWTAuthAPI.Services
                     }
                 }
 
+                // Save cash payment record so it appears in financial reports
+                var cashPaymentRecord = new CashPayment
+                {
+                    StudentId = student.StudentId,
+                    Amount = dto.Amount,
+                    Remarks = dto.Remarks,
+                    ProcessedBy = processedBy,
+                    PaidAt = DateTime.UtcNow
+                };
+                _context.CashPayments.Add(cashPaymentRecord);
+
                 await _context.SaveChangesAsync();
 
                 // Log the action
@@ -728,6 +739,38 @@ namespace JWTAuthAPI.Services
                 ReceiptNumber = student.ReceiptNumber,
                 Notes = student.Notes
             };
+        }
+
+        public async Task<ApiResponse<List<CashPaymentRecordDto>>> GetCashPaymentsByStudentIdAsync(int studentId)
+        {
+            try
+            {
+                var student = await _context.Students.FindAsync(studentId);
+                if (student == null)
+                    return ResponseHelper.Error<List<CashPaymentRecordDto>>("Student not found");
+
+                var payments = await _context.CashPayments
+                    .Where(c => c.StudentId == studentId)
+                    .OrderByDescending(c => c.PaidAt)
+                    .Select(c => new CashPaymentRecordDto
+                    {
+                        CashPaymentId = c.CashPaymentId,
+                        StudentId = c.StudentId,
+                        StudentName = student.Name,
+                        Amount = c.Amount,
+                        Remarks = c.Remarks,
+                        ProcessedBy = c.ProcessedBy,
+                        PaidAt = c.PaidAt
+                    })
+                    .ToListAsync();
+
+                return ResponseHelper.Success(payments);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting cash payments for student {StudentId}", studentId);
+                return ResponseHelper.Error<List<CashPaymentRecordDto>>("An error occurred while retrieving cash payments");
+            }
         }
 
         private string GenerateTemporaryPassword()

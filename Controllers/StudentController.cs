@@ -189,6 +189,13 @@ namespace JWTAuthAPI.Controllers
             return Ok(result);
         }
 
+        [HttpGet("{id}/cash-payments")]
+        public async Task<IActionResult> GetStudentCashPayments(int id)
+        {
+            var result = await _studentService.GetCashPaymentsByStudentIdAsync(id);
+            return result.IsSuccess ? Ok(result) : NotFound(result);
+        }
+
         [HttpGet("{id}/documents")]
         public async Task<IActionResult> GetStudentDocuments(int id)
         {

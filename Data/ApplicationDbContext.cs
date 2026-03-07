@@ -27,6 +27,7 @@ namespace JWTAuthAPI.Data
         public DbSet<PaymentPlan> PaymentPlans { get; set; } // DbSet for Payment Plans
         public DbSet<Installment> Installments { get; set; } // DbSet for Installments
         public DbSet<StripePayment> StripePayments { get; set; } // DbSet for Stripe Payments
+        public DbSet<CashPayment> CashPayments { get; set; } // DbSet for Cash Payments
         public DbSet<FeeStructure> FeeStructures { get; set; } // DbSet for Fee Structures
         public DbSet<Transaction> Transactions { get; set; } // DbSet for Transactions
         public DbSet<UserNotificationRead> UserNotificationReads { get; set; } // DbSet for User Notification Read Status
@@ -92,6 +93,19 @@ namespace JWTAuthAPI.Data
                 .WithMany(c => c.Batches)
                 .HasForeignKey(b => b.CourseId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Configure CashPayment-Student relationship
+            modelBuilder.Entity<CashPayment>()
+                .HasOne(c => c.Student)
+                .WithMany()
+                .HasForeignKey(c => c.StudentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<CashPayment>()
+                .HasIndex(c => c.StudentId);
+
+            modelBuilder.Entity<CashPayment>()
+                .HasIndex(c => c.PaidAt);
 
             // Configure Course-Student relationship
             modelBuilder.Entity<Student>()

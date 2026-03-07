@@ -10,6 +10,7 @@ namespace JWTAuthAPI.Services
         Task<ApiResponse<StudentDetailDto>> GetStudentDetailAsync(int studentId);
         Task<ApiResponse<RegistrationSummaryDto>> GetRegistrationSummaryAsync(int studentId);
         Task<ApiResponse<StudentDto>> ProcessCashPaymentAsync(int studentId, CashPaymentDto dto, string processedBy);
+        Task<ApiResponse<List<CashPaymentRecordDto>>> GetCashPaymentsByStudentIdAsync(int studentId);
         Task<ApiResponse<List<StudentDto>>> GetAllStudentsAsync();
         Task<ApiResponse<List<StudentDto>>> GetStudentsByStatusAsync(StudentStatus status);
         Task<ApiResponse<StudentDto>> UpdateStudentAsync(int studentId, UpdateStudentDto updateDto, string updatedBy);

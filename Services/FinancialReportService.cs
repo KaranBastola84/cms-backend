@@ -28,9 +28,17 @@ namespace JWTAuthAPI.Services
                     .Include(p => p.Installments)
                     .ToListAsync();
 
+                var cashPayments = await _context.CashPayments.ToListAsync();
+                var totalCashRevenue = cashPayments.Sum(c => c.Amount);
+
+                var stripeRevenue = paymentPlans.Sum(p => p.PaidAmount);
+
                 var summary = new FinancialSummaryDto
                 {
-                    TotalRevenue = paymentPlans.Sum(p => p.PaidAmount),
+                    TotalStripeRevenue = stripeRevenue,
+                    TotalCashRevenue = totalCashRevenue,
+                    TotalCashPayments = cashPayments.Count,
+                    TotalRevenue = stripeRevenue + totalCashRevenue,
                     OutstandingAmount = paymentPlans.Sum(p => p.BalanceAmount),
                     TotalExpectedRevenue = paymentPlans.Sum(p => p.TotalAmount),
                     ActivePaymentPlans = paymentPlans.Count(p => p.Status == PaymentPlanStatus.Active),
@@ -106,8 +114,8 @@ namespace JWTAuthAPI.Services
                     .Include(p => p.Student)
                     .Include(p => p.Course)
                     .Include(p => p.Installments)
-                    .Where(p => p.Installments.Any(i => 
-                        i.Status == InstallmentStatus.Overdue && 
+                    .Where(p => p.Installments.Any(i =>
+                        i.Status == InstallmentStatus.Overdue &&
                         i.DueDate < thresholdDate))
                     .Select(p => new DefaulterStudentDto
                     {
@@ -156,9 +164,9 @@ namespace JWTAuthAPI.Services
                         .ThenInclude(p => p!.Course)
                     .Include(i => i.PaymentPlan)
                         .ThenInclude(p => p!.Student)
-                    .Where(i => i.Status == InstallmentStatus.Paid && 
-                               i.PaidDate.HasValue && 
-                               i.PaidDate >= startDate && 
+                    .Where(i => i.Status == InstallmentStatus.Paid &&
+                               i.PaidDate.HasValue &&
+                               i.PaidDate >= startDate &&
                                i.PaidDate <= endDate)
                     .ToListAsync();
 
@@ -176,12 +184,19 @@ namespace JWTAuthAPI.Services
                     .OrderByDescending(c => c.TotalRevenue)
                     .ToList();
 
+                var cashPaymentsInRange = await _context.CashPayments
+                    .Where(c => c.PaidAt >= startDate && c.PaidAt <= endDate)
+                    .ToListAsync();
+
                 var report = new RevenueReportDto
                 {
                     StartDate = startDate,
                     EndDate = endDate,
-                    TotalRevenue = paidInstallments.Sum(i => i.Amount),
+                    StripeRevenue = paidInstallments.Sum(i => i.Amount),
+                    CashRevenue = cashPaymentsInRange.Sum(c => c.Amount),
+                    TotalRevenue = paidInstallments.Sum(i => i.Amount) + cashPaymentsInRange.Sum(c => c.Amount),
                     TotalPayments = paidInstallments.Count,
+                    CashPaymentCount = cashPaymentsInRange.Count,
                     UniquePayingStudents = paidInstallments.Where(i => i.PaymentPlan != null).Select(i => i.PaymentPlan!.StudentId).Distinct().Count(),
                     CourseRevenues = courseRevenues,
                     AveragePaymentAmount = paidInstallments.Any() ? paidInstallments.Average(i => i.Amount) : 0,

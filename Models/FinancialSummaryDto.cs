@@ -22,6 +22,9 @@ namespace JWTAuthAPI.Models
         public decimal CollectionRate { get; set; }
         public decimal TodayCollection { get; set; }
         public decimal MonthCollection { get; set; }
+        public decimal TotalStripeRevenue { get; set; }
+        public decimal TotalCashRevenue { get; set; }
+        public int TotalCashPayments { get; set; }
         public decimal YearCollection { get; set; }
         public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;
     }
