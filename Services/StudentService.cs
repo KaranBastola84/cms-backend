@@ -34,13 +34,15 @@ namespace JWTAuthAPI.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                var normalizedEmail = NormalizeEmail(createDto.Email);
+
                 // Check if email already exists
                 var existingStudent = await _context.Students
-                    .FirstOrDefaultAsync(s => s.Email == createDto.Email);
+                    .FirstOrDefaultAsync(s => s.Email.ToLower() == normalizedEmail);
 
                 if (existingStudent != null)
                 {
-                    return ResponseHelper.Error<StudentDto>("A student with this email already exists");
+                    return ResponseHelper.Error<StudentDto>($"A student with email '{createDto.Email.Trim()}' already exists");
                 }
 
                 // Validate batch capacity (with row lock to prevent race condition)
@@ -53,7 +55,7 @@ namespace JWTAuthAPI.Services
                 var student = new Student
                 {
                     Name = createDto.Name,
-                    Email = createDto.Email,
+                    Email = createDto.Email.Trim(),
                     Phone = createDto.Phone,
                     CourseId = createDto.CourseId,
                     BatchId = createDto.BatchId,
@@ -92,6 +94,11 @@ namespace JWTAuthAPI.Services
 
                 var studentDto = MapToDto(student);
                 return ResponseHelper.Success(studentDto, "Student registered successfully. Please complete payment to confirm admission.");
+            }
+            catch (DbUpdateException ex) when (IsDuplicateEmailDbError(ex))
+            {
+                await transaction.RollbackAsync();
+                return ResponseHelper.Error<StudentDto>($"A student with email '{createDto.Email.Trim()}' already exists");
             }
             catch (Exception ex)
             {
@@ -347,12 +354,14 @@ namespace JWTAuthAPI.Services
                 // Check if email is being changed and if it already exists
                 if (!string.IsNullOrEmpty(updateDto.Email) && updateDto.Email != student.Email)
                 {
+                    var normalizedEmail = NormalizeEmail(updateDto.Email);
+
                     var emailExists = await _context.Students
-                        .AnyAsync(s => s.Email == updateDto.Email && s.StudentId != studentId);
+                        .AnyAsync(s => s.Email.ToLower() == normalizedEmail && s.StudentId != studentId);
 
                     if (emailExists)
                     {
-                        return ResponseHelper.Error<StudentDto>("A student with this email already exists");
+                        return ResponseHelper.Error<StudentDto>($"A student with email '{updateDto.Email.Trim()}' already exists");
                     }
                 }
 
@@ -367,7 +376,7 @@ namespace JWTAuthAPI.Services
                 if (!string.IsNullOrEmpty(updateDto.Email) && updateDto.Email != student.Email)
                 {
                     changes.Add($"Email: {student.Email} → {updateDto.Email}");
-                    student.Email = updateDto.Email;
+                    student.Email = updateDto.Email.Trim();
                 }
 
                 if (!string.IsNullOrEmpty(updateDto.Phone) && updateDto.Phone != student.Phone)
@@ -470,11 +479,27 @@ namespace JWTAuthAPI.Services
                 var studentDto = MapToDto(student);
                 return ResponseHelper.Success(studentDto, "Student updated successfully");
             }
+            catch (DbUpdateException ex) when (IsDuplicateEmailDbError(ex))
+            {
+                return ResponseHelper.Error<StudentDto>($"A student with email '{updateDto.Email?.Trim()}' already exists");
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating student");
                 return ResponseHelper.Error<StudentDto>("An error occurred while updating the student");
             }
+        }
+
+        private static string NormalizeEmail(string email)
+        {
+            return email.Trim().ToLower();
+        }
+
+        private static bool IsDuplicateEmailDbError(DbUpdateException ex)
+        {
+            var allMessages = ex.ToString().ToLowerInvariant();
+            return allMessages.Contains("email") &&
+                   (allMessages.Contains("duplicate") || allMessages.Contains("unique") || allMessages.Contains("2601") || allMessages.Contains("2627"));
         }
 
         public async Task<ApiResponse<bool>> DeleteStudentAsync(int studentId, string deletedBy)
