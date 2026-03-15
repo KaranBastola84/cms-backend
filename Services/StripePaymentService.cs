@@ -50,6 +50,11 @@ namespace JWTAuthAPI.Services
                     return ResponseHelper.Error<StripePaymentResponseDto>("Currency is required");
                 }
 
+                if (dto.InstallmentId.HasValue && dto.InstallmentId.Value <= 0)
+                {
+                    return ResponseHelper.Error<StripePaymentResponseDto>("InstallmentId must be greater than 0 when provided");
+                }
+
                 // Validate student
                 var student = await _context.Students.FindAsync(dto.StudentId);
                 if (student == null)
@@ -57,10 +62,7 @@ namespace JWTAuthAPI.Services
                     return ResponseHelper.Error<StripePaymentResponseDto>($"Student with ID {dto.StudentId} not found");
                 }
 
-                // Treat non-positive values as "not provided" to support admission payments.
-                var normalizedInstallmentId = dto.InstallmentId.HasValue && dto.InstallmentId.Value > 0
-                    ? dto.InstallmentId.Value
-                    : (int?)null;
+                var normalizedInstallmentId = dto.InstallmentId;
 
                 Installment? installment = null;
 
