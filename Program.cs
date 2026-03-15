@@ -109,8 +109,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 // Configure Stripe Settings
-builder.Services.Configure<JWTAuthAPI.Models.StripeSettings>(builder.Configuration.GetSection("StripeSettings"));
-Stripe.StripeConfiguration.ApiKey = builder.Configuration["StripeSettings:SecretKey"];
+builder.Services.Configure<JWTAuthAPI.Models.StripeSettings>(builder.Configuration.GetSection("Stripe"));
+Stripe.StripeConfiguration.ApiKey = builder.Configuration["Stripe:SecretKey"];
 
 builder.Services.AddScoped<JWTAuthAPI.Services.JwtService>(); // Register JwtService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IEmailService, JWTAuthAPI.Services.EmailService>(); // Register EmailService for dependency injection

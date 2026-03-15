@@ -59,7 +59,7 @@ namespace JWTAuthAPI.Controllers
             try
             {
                 var stripeSignature = Request.Headers["Stripe-Signature"].ToString();
-                var webhookSecret = _configuration["StripeSettings:WebhookSecret"];
+                var webhookSecret = _configuration["Stripe:WebhookSecret"];
 
                 // SECURITY: Always require webhook signature validation
                 if (string.IsNullOrWhiteSpace(webhookSecret))
