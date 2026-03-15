@@ -57,32 +57,41 @@ namespace JWTAuthAPI.Services
                     return ResponseHelper.Error<StripePaymentResponseDto>($"Student with ID {dto.StudentId} not found");
                 }
 
-                // Validate installment
-                var installment = await _context.Installments
-                    .Include(i => i.PaymentPlan)
-                        .ThenInclude(p => p!.Student)
-                    .FirstOrDefaultAsync(i => i.InstallmentId == dto.InstallmentId);
+                // Treat non-positive values as "not provided" to support admission payments.
+                var normalizedInstallmentId = dto.InstallmentId.HasValue && dto.InstallmentId.Value > 0
+                    ? dto.InstallmentId.Value
+                    : (int?)null;
 
-                if (installment == null)
-                {
-                    return ResponseHelper.Error<StripePaymentResponseDto>($"Installment with ID {dto.InstallmentId} not found");
-                }
+                Installment? installment = null;
 
-                if (installment.Status == InstallmentStatus.Paid)
+                if (normalizedInstallmentId.HasValue)
                 {
-                    return ResponseHelper.Error<StripePaymentResponseDto>("This installment has already been paid");
-                }
+                    installment = await _context.Installments
+                        .Include(i => i.PaymentPlan)
+                            .ThenInclude(p => p!.Student)
+                        .FirstOrDefaultAsync(i => i.InstallmentId == normalizedInstallmentId.Value);
 
-                // Verify installment belongs to the student
-                if (installment.PaymentPlan?.StudentId != dto.StudentId)
-                {
-                    return ResponseHelper.Error<StripePaymentResponseDto>("Installment does not belong to this student");
-                }
+                    if (installment == null)
+                    {
+                        return ResponseHelper.Error<StripePaymentResponseDto>($"Installment with ID {normalizedInstallmentId.Value} not found");
+                    }
 
-                // Validate amount matches installment amount
-                if (Math.Abs(dto.Amount - installment.Amount) > 0.01m)
-                {
-                    return ResponseHelper.Error<StripePaymentResponseDto>($"Payment amount ({dto.Amount}) does not match installment amount ({installment.Amount})");
+                    if (installment.Status == InstallmentStatus.Paid)
+                    {
+                        return ResponseHelper.Error<StripePaymentResponseDto>("This installment has already been paid");
+                    }
+
+                    // Verify installment belongs to the student
+                    if (installment.PaymentPlan?.StudentId != dto.StudentId)
+                    {
+                        return ResponseHelper.Error<StripePaymentResponseDto>("Installment does not belong to this student");
+                    }
+
+                    // Validate amount matches installment amount
+                    if (Math.Abs(dto.Amount - installment.Amount) > 0.01m)
+                    {
+                        return ResponseHelper.Error<StripePaymentResponseDto>($"Payment amount ({dto.Amount}) does not match installment amount ({installment.Amount})");
+                    }
                 }
 
                 // Create Stripe Payment Intent
@@ -97,12 +106,16 @@ namespace JWTAuthAPI.Services
                     Metadata = new Dictionary<string, string>
                     {
                         { "student_id", dto.StudentId.ToString() },
-                        { "installment_id", dto.InstallmentId.ToString() },
                         { "student_name", student.Name },
                         { "student_email", student.Email },
                         { "created_by", createdBy }
                     }
                 };
+
+                if (normalizedInstallmentId.HasValue)
+                {
+                    options.Metadata.Add("installment_id", normalizedInstallmentId.Value.ToString());
+                }
 
                 var service = new PaymentIntentService();
                 var paymentIntent = await service.CreateAsync(options);
@@ -112,7 +125,7 @@ namespace JWTAuthAPI.Services
                 {
                     PaymentIntentId = paymentIntent.Id,
                     StudentId = dto.StudentId,
-                    InstallmentId = dto.InstallmentId,
+                    InstallmentId = normalizedInstallmentId,
                     Amount = dto.Amount,
                     Currency = dto.Currency,
                     Status = Models.PaymentStatus.Pending,
@@ -125,10 +138,13 @@ namespace JWTAuthAPI.Services
                 _context.StripePayments.Add(stripePayment);
                 await _context.SaveChangesAsync();
 
-                // Update installment with payment intent ID
-                installment.StripePaymentIntentId = paymentIntent.Id;
-                installment.Status = InstallmentStatus.Pending;
-                await _context.SaveChangesAsync();
+                // Update installment only when a specific installment payment is being processed.
+                if (installment != null)
+                {
+                    installment.StripePaymentIntentId = paymentIntent.Id;
+                    installment.Status = InstallmentStatus.Pending;
+                    await _context.SaveChangesAsync();
+                }
 
                 // Log
                 await _auditService.LogAsync(
