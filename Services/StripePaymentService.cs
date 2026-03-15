@@ -299,28 +299,40 @@ namespace JWTAuthAPI.Services
                 // Get payment intent from Stripe
                 var service = new PaymentIntentService();
                 var paymentIntent = await service.GetAsync(payment.PaymentIntentId);
+                var wasAlreadyPaid = payment.Status == Models.PaymentStatus.Paid;
 
                 // Update payment status
-                payment.Status = paymentIntent.Status == "succeeded" ? Models.PaymentStatus.Paid : Models.PaymentStatus.Failed;
+                payment.Status = paymentIntent.Status switch
+                {
+                    "succeeded" => Models.PaymentStatus.Paid,
+                    "processing" => Models.PaymentStatus.Pending,
+                    "requires_payment_method" => Models.PaymentStatus.Pending,
+                    "requires_confirmation" => Models.PaymentStatus.Pending,
+                    "requires_action" => Models.PaymentStatus.Pending,
+                    _ => Models.PaymentStatus.Failed
+                };
                 payment.PaymentMethod = paymentIntent.PaymentMethodTypes?.FirstOrDefault();
                 payment.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
 
-                if (payment.Status == Models.PaymentStatus.Paid && payment.InstallmentId.HasValue)
+                if (payment.Status == Models.PaymentStatus.Paid)
                 {
-                    // Mark installment as paid
-                    var payDto = new PayInstallmentDto
+                    if (payment.InstallmentId.HasValue && !wasAlreadyPaid)
                     {
-                        InstallmentId = payment.InstallmentId.Value,
-                        Amount = payment.Amount,
-                        PaymentMethod = "Stripe",
-                        Remarks = $"Paid via Stripe - Payment Intent: {payment.PaymentIntentId}"
-                    };
+                        // Mark installment as paid once per payment to avoid duplicates.
+                        var payDto = new PayInstallmentDto
+                        {
+                            InstallmentId = payment.InstallmentId.Value,
+                            Amount = payment.Amount,
+                            PaymentMethod = "Stripe",
+                            Remarks = $"Paid via Stripe - Payment Intent: {payment.PaymentIntentId}"
+                        };
 
-                    await _paymentPlanService.PayInstallmentAsync(payment.InstallmentId.Value, payDto, "System");
+                        await _paymentPlanService.PayInstallmentAsync(payment.InstallmentId.Value, payDto, "System");
+                    }
 
-                    // Complete admission if student is still PendingPayment
+                    // Complete admission even for non-installment admission payments.
                     await CompleteStudentAdmissionIfPendingAsync(payment.StudentId);
                 }
 
@@ -342,6 +354,7 @@ namespace JWTAuthAPI.Services
 
             if (payment != null)
             {
+                var wasAlreadyPaid = payment.Status == Models.PaymentStatus.Paid;
                 payment.Status = Models.PaymentStatus.Paid;
                 payment.PaymentMethod = paymentIntent.PaymentMethodTypes?.FirstOrDefault();
                 payment.UpdatedAt = DateTime.UtcNow;
@@ -349,7 +362,7 @@ namespace JWTAuthAPI.Services
                 await _context.SaveChangesAsync();
 
                 // Mark installment as paid
-                if (payment.InstallmentId.HasValue)
+                if (payment.InstallmentId.HasValue && !wasAlreadyPaid)
                 {
                     var payDto = new PayInstallmentDto
                     {
@@ -360,10 +373,10 @@ namespace JWTAuthAPI.Services
                     };
 
                     await _paymentPlanService.PayInstallmentAsync(payment.InstallmentId.Value, payDto, "System");
-
-                    // Complete admission if student is still PendingPayment
-                    await CompleteStudentAdmissionIfPendingAsync(payment.StudentId);
                 }
+
+                // Complete admission even for non-installment admission payments.
+                await CompleteStudentAdmissionIfPendingAsync(payment.StudentId);
 
                 // Log success
                 await _auditService.LogAsync(
