@@ -28,10 +28,15 @@ namespace JWTAuthAPI.Services
                     .Include(p => p.Installments)
                     .ToListAsync();
 
+                var directStripePayments = await _context.StripePayments
+                    .Where(p => p.Status == PaymentStatus.Paid && !p.InstallmentId.HasValue)
+                    .ToListAsync();
+
                 var cashPayments = await _context.CashPayments.ToListAsync();
                 var totalCashRevenue = cashPayments.Sum(c => c.Amount);
 
-                var stripeRevenue = paymentPlans.Sum(p => p.PaidAmount);
+                // Payment plan revenue + direct Stripe admissions (without installment linkage).
+                var stripeRevenue = paymentPlans.Sum(p => p.PaidAmount) + directStripePayments.Sum(p => p.Amount);
 
                 var summary = new FinancialSummaryDto
                 {
@@ -170,6 +175,13 @@ namespace JWTAuthAPI.Services
                                i.PaidDate <= endDate)
                     .ToListAsync();
 
+                var directStripePaymentsInRange = await _context.StripePayments
+                    .Where(p => p.Status == PaymentStatus.Paid &&
+                                !p.InstallmentId.HasValue &&
+                                p.UpdatedAt >= startDate &&
+                                p.UpdatedAt <= endDate)
+                    .ToListAsync();
+
                 var courseRevenues = paidInstallments
                     .Where(i => i.PaymentPlan != null && i.PaymentPlan.Course != null)
                     .GroupBy(i => new { i.PaymentPlan!.CourseId, CourseName = i.PaymentPlan!.Course!.Name })
@@ -188,18 +200,27 @@ namespace JWTAuthAPI.Services
                     .Where(c => c.PaidAt >= startDate && c.PaidAt <= endDate)
                     .ToListAsync();
 
+                var stripeRevenue = paidInstallments.Sum(i => i.Amount) + directStripePaymentsInRange.Sum(p => p.Amount);
+                var totalPayments = paidInstallments.Count + directStripePaymentsInRange.Count;
+                var uniquePayingStudents = paidInstallments
+                    .Where(i => i.PaymentPlan != null)
+                    .Select(i => i.PaymentPlan!.StudentId)
+                    .Union(directStripePaymentsInRange.Select(p => p.StudentId))
+                    .Distinct()
+                    .Count();
+
                 var report = new RevenueReportDto
                 {
                     StartDate = startDate,
                     EndDate = endDate,
-                    StripeRevenue = paidInstallments.Sum(i => i.Amount),
+                    StripeRevenue = stripeRevenue,
                     CashRevenue = cashPaymentsInRange.Sum(c => c.Amount),
-                    TotalRevenue = paidInstallments.Sum(i => i.Amount) + cashPaymentsInRange.Sum(c => c.Amount),
-                    TotalPayments = paidInstallments.Count,
+                    TotalRevenue = stripeRevenue + cashPaymentsInRange.Sum(c => c.Amount),
+                    TotalPayments = totalPayments,
                     CashPaymentCount = cashPaymentsInRange.Count,
-                    UniquePayingStudents = paidInstallments.Where(i => i.PaymentPlan != null).Select(i => i.PaymentPlan!.StudentId).Distinct().Count(),
+                    UniquePayingStudents = uniquePayingStudents,
                     CourseRevenues = courseRevenues,
-                    AveragePaymentAmount = paidInstallments.Any() ? paidInstallments.Average(i => i.Amount) : 0,
+                    AveragePaymentAmount = totalPayments > 0 ? Math.Round(stripeRevenue / totalPayments, 2) : 0,
                     GeneratedAt = DateTime.UtcNow
                 };
 
