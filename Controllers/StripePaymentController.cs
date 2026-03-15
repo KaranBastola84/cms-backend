@@ -99,5 +99,13 @@ namespace JWTAuthAPI.Controllers
             var result = await _stripePaymentService.ConfirmPaymentAsync(paymentId);
             return result.IsSuccess ? Ok(result) : BadRequest(result);
         }
+
+        [HttpPost("confirm-by-intent/{paymentIntentId}")]
+        [Authorize]
+        public async Task<IActionResult> ConfirmPaymentByIntentId(string paymentIntentId)
+        {
+            var result = await _stripePaymentService.ConfirmPaymentByIntentIdAsync(paymentIntentId);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
+        }
     }
 }

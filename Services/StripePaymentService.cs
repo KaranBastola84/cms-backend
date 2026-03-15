@@ -247,6 +247,33 @@ namespace JWTAuthAPI.Services
             }
         }
 
+        public async Task<ApiResponse<StripePaymentResponseDto>> ConfirmPaymentByIntentIdAsync(string paymentIntentId)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(paymentIntentId))
+                {
+                    return ResponseHelper.Error<StripePaymentResponseDto>("PaymentIntentId is required");
+                }
+
+                var payment = await _context.StripePayments
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.PaymentIntentId == paymentIntentId);
+
+                if (payment == null)
+                {
+                    return ResponseHelper.Error<StripePaymentResponseDto>($"Payment with intent ID '{paymentIntentId}' not found");
+                }
+
+                return await ConfirmPaymentAsync(payment.StripePaymentId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error confirming payment by intent ID {PaymentIntentId}", paymentIntentId);
+                return ResponseHelper.Error<StripePaymentResponseDto>($"An error occurred while confirming payment by intent ID: {ex.Message}");
+            }
+        }
+
         public async Task<ApiResponse<string>> HandleWebhookAsync(Event stripeEvent)
         {
             try
