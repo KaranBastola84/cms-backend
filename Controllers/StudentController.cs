@@ -3,6 +3,7 @@ using JWTAuthAPI.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using System.Text.Json;
 
 namespace JWTAuthAPI.Controllers
 {
@@ -107,8 +108,16 @@ namespace JWTAuthAPI.Controllers
 
         [HttpPatch("{id}/status")]
         [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
-        public async Task<IActionResult> ChangeStudentStatus(int id, [FromBody] StudentStatus status)
+        public async Task<IActionResult> ChangeStudentStatus(int id, [FromBody] JsonElement statusPayload)
         {
+            if (!TryParseStatusPayload(statusPayload, out var status))
+            {
+                return BadRequest(new
+                {
+                    message = "Invalid status payload. Use either a raw value like \"Enrolled\" or an object like { \"status\": \"Enrolled\" }."
+                });
+            }
+
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
             var result = await _studentService.ChangeStudentStatusAsync(id, status, userId);
 
@@ -118,6 +127,36 @@ namespace JWTAuthAPI.Controllers
             }
 
             return Ok(result);
+        }
+
+        private static bool TryParseStatusPayload(JsonElement payload, out StudentStatus status)
+        {
+            status = default;
+
+            switch (payload.ValueKind)
+            {
+                case JsonValueKind.String:
+                    return Enum.TryParse(payload.GetString(), true, out status);
+
+                case JsonValueKind.Number:
+                    if (payload.TryGetInt32(out var numericStatus) && Enum.IsDefined(typeof(StudentStatus), numericStatus))
+                    {
+                        status = (StudentStatus)numericStatus;
+                        return true;
+                    }
+                    return false;
+
+                case JsonValueKind.Object:
+                    if (payload.TryGetProperty("status", out var statusProperty) ||
+                        payload.TryGetProperty("Status", out statusProperty))
+                    {
+                        return TryParseStatusPayload(statusProperty, out status);
+                    }
+                    return false;
+
+                default:
+                    return false;
+            }
         }
 
         [HttpDelete("{id}")]
