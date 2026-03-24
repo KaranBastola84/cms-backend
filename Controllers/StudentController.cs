@@ -241,5 +241,30 @@ namespace JWTAuthAPI.Controllers
             var result = await _fileService.GetStudentDocumentsAsync(id);
             return Ok(result);
         }
+
+        [HttpGet("{id}/documents/{documentId}/download")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        public async Task<IActionResult> DownloadStudentDocument(int id, int documentId)
+        {
+            var documentResult = await _fileService.GetDocumentByIdAsync(documentId);
+            if (!documentResult.IsSuccess || documentResult.Result == null)
+            {
+                return NotFound(documentResult);
+            }
+
+            if (documentResult.Result.StudentId != id)
+            {
+                return BadRequest(new { message = "Document does not belong to the specified student" });
+            }
+
+            var downloadResult = await _fileService.DownloadDocumentAsync(documentId);
+            if (!downloadResult.IsSuccess)
+            {
+                return NotFound(downloadResult);
+            }
+
+            var (fileData, contentType, fileName) = downloadResult.Result;
+            return File(fileData, contentType, fileName);
+        }
     }
 }

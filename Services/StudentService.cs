@@ -13,19 +13,22 @@ namespace JWTAuthAPI.Services
         private readonly IAuditService _auditService;
         private readonly IEmailService _emailService;
         private readonly ILogger<StudentService> _logger;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
         public StudentService(
             ApplicationDbContext context,
             IPasswordHasher<Student> passwordHasher,
             IAuditService auditService,
             IEmailService emailService,
-            ILogger<StudentService> logger)
+            ILogger<StudentService> logger,
+            IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
             _passwordHasher = passwordHasher;
             _auditService = auditService;
             _emailService = emailService;
             _logger = logger;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<ApiResponse<StudentDto>> CreateStudentAsync(CreateStudentDto createDto, string createdBy)
@@ -294,7 +297,7 @@ namespace JWTAuthAPI.Services
                         ContentType = d.ContentType,
                         UploadedAt = d.UploadedAt,
                         Description = d.Description,
-                        DownloadUrl = $"/api/StudentDocument/{d.DocumentId}/download"
+                        DownloadUrl = BuildDocumentDownloadUrlWithToken(d.DocumentId)
                     }).ToList()
                 };
 
@@ -667,7 +670,7 @@ namespace JWTAuthAPI.Services
                         ContentType = d.ContentType,
                         UploadedAt = d.UploadedAt,
                         Description = d.Description,
-                        DownloadUrl = $"/api/StudentDocument/{d.DocumentId}/download"
+                        DownloadUrl = BuildDocumentDownloadUrlWithToken(d.DocumentId)
                     }).ToList()
                 };
 
@@ -850,6 +853,25 @@ namespace JWTAuthAPI.Services
             var random = new Random();
             return new string(Enumerable.Repeat(chars, 10)
                 .Select(s => s[random.Next(s.Length)]).ToArray());
+        }
+
+        private string BuildDocumentDownloadUrlWithToken(int documentId)
+        {
+            var baseUrl = $"/api/StudentDocument/{documentId}/download";
+            var authHeader = _httpContextAccessor.HttpContext?.Request.Headers.Authorization.ToString();
+
+            if (string.IsNullOrWhiteSpace(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return baseUrl;
+            }
+
+            var token = authHeader.Substring("Bearer ".Length).Trim();
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return baseUrl;
+            }
+
+            return $"{baseUrl}?accessToken={Uri.EscapeDataString(token)}";
         }
 
         private async Task<ApiResponse<bool>> ValidateBatchCapacityAsync(int batchId, int? excludeStudentId)
