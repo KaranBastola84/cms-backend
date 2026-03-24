@@ -20,5 +20,6 @@ namespace JWTAuthAPI.Services
         Task<IEnumerable<AuditLog>> GetLogsAsync(int pageNumber = 1, int pageSize = 50);
         Task<IEnumerable<AuditLog>> GetLogsByUserAsync(string userId, int pageNumber = 1, int pageSize = 50);
         Task<IEnumerable<AuditLog>> GetLogsByModuleAsync(string module, int pageNumber = 1, int pageSize = 50);
+        Task<byte[]> ExportAllLogsPdfAsync();
     }
 }

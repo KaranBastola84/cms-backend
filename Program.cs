@@ -8,6 +8,8 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args); // Create a builder for the web application
 
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
 // Configure global request size limits (30MB max)
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
 {
