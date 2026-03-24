@@ -144,6 +144,36 @@ namespace JWTAuthAPI.Controllers
         }
 
         /// <summary>
+        /// Global search for header search bar (students, courses, batches, inquiries)
+        /// </summary>
+        /// <param name="q">Search text</param>
+        /// <param name="limit">Maximum number of results (default: 15, max: 25)</param>
+        [HttpGet("search")]
+        public async Task<ActionResult<ApiResponse<AdminGlobalSearchDto>>> Search([FromQuery] string q, [FromQuery] int limit = 15)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 1)
+                {
+                    return BadRequest(ResponseHelper.Error<AdminGlobalSearchDto>("Search query is required", 400));
+                }
+
+                if (limit < 1 || limit > 25)
+                {
+                    return BadRequest(ResponseHelper.Error<AdminGlobalSearchDto>("Limit must be between 1 and 25", 400));
+                }
+
+                var result = await _dashboardService.SearchAsync(q, limit);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in Search endpoint");
+                return StatusCode(500, ResponseHelper.Error<AdminGlobalSearchDto>("An error occurred while searching", 500));
+            }
+        }
+
+        /// <summary>
         /// Get notifications for bell icon including payment alerts, new inquiries, attendance issues, and recent activities
         /// </summary>
         /// <param name="limit">Maximum number of notifications to return (default: 50, max: 100)</param>

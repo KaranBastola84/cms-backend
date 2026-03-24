@@ -834,6 +834,107 @@ namespace JWTAuthAPI.Services
             }
         }
 
+        public async Task<ApiResponse<AdminGlobalSearchDto>> SearchAsync(string query, int limit = 15)
+        {
+            try
+            {
+                var term = query.Trim();
+                var like = $"%{term}%";
+                var perTypeLimit = Math.Max(3, limit);
+
+                var students = await _context.Students
+                    .Where(s => EF.Functions.ILike(s.Name, like)
+                             || EF.Functions.ILike(s.Email, like)
+                             || EF.Functions.ILike(s.Phone, like))
+                    .OrderBy(s => s.Name)
+                    .Take(perTypeLimit)
+                    .Select(s => new GlobalSearchResultItemDto
+                    {
+                        Type = "Student",
+                        Id = s.StudentId,
+                        Title = s.Name,
+                        Subtitle = s.Email,
+                        Status = s.Status.ToString(),
+                        NavigateTo = $"/students/{s.StudentId}"
+                    })
+                    .ToListAsync();
+
+                var courses = await _context.Courses
+                    .Where(c => EF.Functions.ILike(c.Name, like)
+                             || (c.Code != null && EF.Functions.ILike(c.Code, like))
+                             || (c.Description != null && EF.Functions.ILike(c.Description, like)))
+                    .OrderBy(c => c.Name)
+                    .Take(perTypeLimit)
+                    .Select(c => new GlobalSearchResultItemDto
+                    {
+                        Type = "Course",
+                        Id = c.CourseId,
+                        Title = c.Name,
+                        Subtitle = c.Code,
+                        Status = c.IsActive ? "Active" : "Inactive",
+                        NavigateTo = $"/courses/{c.CourseId}"
+                    })
+                    .ToListAsync();
+
+                var batches = await _context.Batches
+                    .Include(b => b.Course)
+                    .Where(b => EF.Functions.ILike(b.Name, like)
+                             || (b.Course != null && EF.Functions.ILike(b.Course.Name, like)))
+                    .OrderBy(b => b.StartDate)
+                    .Take(perTypeLimit)
+                    .Select(b => new GlobalSearchResultItemDto
+                    {
+                        Type = "Batch",
+                        Id = b.BatchId,
+                        Title = b.Name,
+                        Subtitle = b.Course != null ? b.Course.Name : null,
+                        Status = b.IsActive ? "Active" : "Inactive",
+                        NavigateTo = $"/batches/{b.BatchId}"
+                    })
+                    .ToListAsync();
+
+                var inquiries = await _context.Inquiries
+                    .Where(i => EF.Functions.ILike(i.FullName, like)
+                             || EF.Functions.ILike(i.Email, like)
+                             || (i.CourseInterest != null && EF.Functions.ILike(i.CourseInterest, like)))
+                    .OrderByDescending(i => i.CreatedAt)
+                    .Take(perTypeLimit)
+                    .Select(i => new GlobalSearchResultItemDto
+                    {
+                        Type = "Inquiry",
+                        Id = i.Id,
+                        Title = i.FullName,
+                        Subtitle = i.CourseInterest,
+                        Status = i.Status.ToString(),
+                        NavigateTo = $"/inquiries/{i.Id}"
+                    })
+                    .ToListAsync();
+
+                var orderedResults = students
+                    .Concat(courses)
+                    .Concat(batches)
+                    .Concat(inquiries)
+                    .OrderBy(r => r.Type)
+                    .ThenBy(r => r.Title)
+                    .Take(limit)
+                    .ToList();
+
+                var response = new AdminGlobalSearchDto
+                {
+                    Query = term,
+                    TotalResults = orderedResults.Count,
+                    Results = orderedResults
+                };
+
+                return ResponseHelper.Success(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in global dashboard search for query {Query}", query);
+                return ResponseHelper.Error<AdminGlobalSearchDto>($"An error occurred: {ex.Message}");
+            }
+        }
+
         public async Task<ApiResponse<NotificationResponseDto>> GetNotificationsAsync(int userId, int limit = 50)
         {
             try
