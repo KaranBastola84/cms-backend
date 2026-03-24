@@ -166,21 +166,66 @@ namespace JWTAuthAPI.Services
                 var allInstallments = paymentPlans.SelectMany(p => p.Installments).ToList();
                 var paidInstallments = allInstallments.Where(i => i.Status == InstallmentStatus.Paid).ToList();
 
+                // Include non-installment Stripe payments and cash payments for complete revenue visibility.
+                var directStripePayments = await _context.StripePayments
+                    .Where(p => p.Status == PaymentStatus.Paid && !p.InstallmentId.HasValue)
+                    .ToListAsync();
+
+                var cashPayments = await _context.CashPayments.ToListAsync();
+
                 // Revenue metrics
                 var todayDate = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
-                var todayRevenue = paidInstallments.Where(i => i.PaidDate.HasValue && i.PaidDate.Value.Date == todayDate);
-                var weekRevenue = paidInstallments.Where(i => i.PaidDate.HasValue && i.PaidDate >= weekAgo);
-                var monthRevenue = paidInstallments.Where(i => i.PaidDate.HasValue && i.PaidDate >= monthStart);
-                var distinctStudentCount = paymentPlans.Select(p => p.StudentId).Distinct().Count();
+                var todayInstallmentRevenue = paidInstallments
+                    .Where(i => i.PaidDate.HasValue && i.PaidDate.Value.Date == todayDate)
+                    .Sum(i => i.Amount);
+                var weekInstallmentRevenue = paidInstallments
+                    .Where(i => i.PaidDate.HasValue && i.PaidDate >= weekAgo)
+                    .Sum(i => i.Amount);
+                var monthInstallmentRevenue = paidInstallments
+                    .Where(i => i.PaidDate.HasValue && i.PaidDate >= monthStart)
+                    .Sum(i => i.Amount);
+
+                var todayDirectStripeRevenue = directStripePayments
+                    .Where(p => p.UpdatedAt.Date == todayDate)
+                    .Sum(p => p.Amount);
+                var weekDirectStripeRevenue = directStripePayments
+                    .Where(p => p.UpdatedAt >= weekAgo)
+                    .Sum(p => p.Amount);
+                var monthDirectStripeRevenue = directStripePayments
+                    .Where(p => p.UpdatedAt >= monthStart)
+                    .Sum(p => p.Amount);
+
+                var todayCashRevenue = cashPayments
+                    .Where(c => c.PaidAt.Date == todayDate)
+                    .Sum(c => c.Amount);
+                var weekCashRevenue = cashPayments
+                    .Where(c => c.PaidAt >= weekAgo)
+                    .Sum(c => c.Amount);
+                var monthCashRevenue = cashPayments
+                    .Where(c => c.PaidAt >= monthStart)
+                    .Sum(c => c.Amount);
+
+                var installmentRevenueTotal = paidInstallments.Sum(i => i.Amount);
+                var directStripeRevenueTotal = directStripePayments.Sum(p => p.Amount);
+                var cashRevenueTotal = cashPayments.Sum(c => c.Amount);
+                var totalRevenue = installmentRevenueTotal + directStripeRevenueTotal + cashRevenueTotal;
+
+                var payingStudentCount = paidInstallments
+                    .Where(i => i.PaymentPlan != null)
+                    .Select(i => i.PaymentPlan!.StudentId)
+                    .Union(directStripePayments.Select(p => p.StudentId))
+                    .Union(cashPayments.Select(c => c.StudentId))
+                    .Distinct()
+                    .Count();
 
                 var revenueMetrics = new RevenueMetrics
                 {
-                    TotalRevenue = paidInstallments.Any() ? paidInstallments.Sum(i => i.Amount) : 0,
-                    RevenueToday = todayRevenue.Any() ? todayRevenue.Sum(i => i.Amount) : 0,
-                    RevenueThisWeek = weekRevenue.Any() ? weekRevenue.Sum(i => i.Amount) : 0,
-                    RevenueThisMonth = monthRevenue.Any() ? monthRevenue.Sum(i => i.Amount) : 0,
-                    AverageRevenuePerStudent = distinctStudentCount > 0 && paidInstallments.Any()
-                        ? Math.Round(paidInstallments.Sum(i => i.Amount) / distinctStudentCount, 2)
+                    TotalRevenue = totalRevenue,
+                    RevenueToday = todayInstallmentRevenue + todayDirectStripeRevenue + todayCashRevenue,
+                    RevenueThisWeek = weekInstallmentRevenue + weekDirectStripeRevenue + weekCashRevenue,
+                    RevenueThisMonth = monthInstallmentRevenue + monthDirectStripeRevenue + monthCashRevenue,
+                    AverageRevenuePerStudent = payingStudentCount > 0
+                        ? Math.Round(totalRevenue / payingStudentCount, 2)
                         : 0
                 };
 
@@ -820,7 +865,7 @@ namespace JWTAuthAPI.Services
                 {
                     notifications.Add(new NotificationDto
                     {
-                        Id = $"payment-critical-{payment.StudentId}-{now.Ticks}",
+                        Id = $"payment-critical-{payment.StudentId}",
                         Type = "payment",
                         Severity = "critical",
                         Title = "Critical Payment Overdue",
@@ -859,7 +904,7 @@ namespace JWTAuthAPI.Services
                 {
                     notifications.Add(new NotificationDto
                     {
-                        Id = $"payment-warning-{payment.StudentId}-{now.Ticks}",
+                        Id = $"payment-warning-{payment.StudentId}",
                         Type = "payment",
                         Severity = "warning",
                         Title = "Payment Overdue",
@@ -1210,14 +1255,7 @@ namespace JWTAuthAPI.Services
                 }
 
                 // Parse notification key to get type and related ID
-                var parts = notificationKey.Split('-');
-                if (parts.Length < 3)
-                {
-                    return ResponseHelper.Error<bool>("Invalid notification key format");
-                }
-
-                var notificationType = parts[0];
-                if (!int.TryParse(parts[2], out int relatedId))
+                if (!TryParseNotificationKey(notificationKey, out var notificationType, out var relatedId))
                 {
                     return ResponseHelper.Error<bool>("Invalid notification key format");
                 }
@@ -1300,20 +1338,24 @@ namespace JWTAuthAPI.Services
 
                 notificationKeys.AddRange(pendingInquiries.Select(id => $"inquiry-pending-{id}"));
 
-                // 5. Critical attendance (simplified - just get student IDs with issues)
-                var attendanceStudents = await _context.Attendances
+                // 5. Critical attendance (same criteria as GetNotificationsAsync)
+                var attendanceRecords = await _context.Attendances
                     .Where(a => a.AttendanceDate >= now.AddDays(-30))
+                    .ToListAsync();
+
+                var attendanceStudents = attendanceRecords
                     .GroupBy(a => a.StudentId)
                     .Select(g => new
                     {
                         StudentId = g.Key,
                         TotalDays = g.Count(),
-                        PresentDays = g.Count(a => a.Status == AttendanceStatus.Present)
+                        PresentDays = g.Count(a => a.Status == AttendanceStatus.Present),
+                        ConsecutiveAbsences = CalculateConsecutiveAbsences(g.OrderByDescending(a => a.AttendanceDate).ToList())
                     })
-                    .Where(x => x.TotalDays > 0 && (decimal)x.PresentDays / x.TotalDays < 0.75m)
+                    .Where(x => x.TotalDays > 0 && (x.ConsecutiveAbsences >= 5 || (decimal)x.PresentDays / x.TotalDays < 0.75m))
                     .Select(x => x.StudentId)
                     .Take(10)
-                    .ToListAsync();
+                    .ToList();
 
                 notificationKeys.AddRange(attendanceStudents.Select(id => $"attendance-critical-{id}"));
 
@@ -1337,11 +1379,42 @@ namespace JWTAuthAPI.Services
                 // 8. Recent payments
                 var recentPayments = await _context.Receipts
                     .Where(r => r.PaymentDate.HasValue && r.PaymentDate >= today)
+                    .OrderByDescending(r => r.PaymentDate)
                     .Select(r => r.ReceiptId)
                     .Take(10)
                     .ToListAsync();
 
                 notificationKeys.AddRange(recentPayments.Select(id => $"payment-received-{id}"));
+
+                // 9. New orders
+                var newOrders = await _context.Orders
+                    .Where(o => o.Status == OrderStatus.Pending && o.OrderDate >= yesterday)
+                    .OrderByDescending(o => o.OrderDate)
+                    .Select(o => o.Id)
+                    .Take(20)
+                    .ToListAsync();
+
+                notificationKeys.AddRange(newOrders.Select(id => $"order-new-{id}"));
+
+                // 10. Low stock alerts
+                var lowStockProducts = await _context.Products
+                    .Where(p => p.IsActive && p.StockQuantity <= p.LowStockThreshold)
+                    .OrderBy(p => p.StockQuantity)
+                    .Select(p => p.Id)
+                    .Take(10)
+                    .ToListAsync();
+
+                notificationKeys.AddRange(lowStockProducts.Select(id => $"stock-low-{id}"));
+
+                // 11. Pending product reviews
+                var pendingReviews = await _context.ProductReviews
+                    .Where(r => !r.IsApproved && r.CreatedAt >= now.AddDays(-7))
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Select(r => r.Id)
+                    .Take(10)
+                    .ToListAsync();
+
+                notificationKeys.AddRange(pendingReviews.Select(id => $"review-pending-{id}"));
 
                 // Get already read notifications
                 var alreadyRead = await _context.UserNotificationReads
@@ -1354,13 +1427,12 @@ namespace JWTAuthAPI.Services
 
                 foreach (var key in toMarkAsRead)
                 {
-                    var parts = key.Split('-');
-                    if (parts.Length >= 3 && int.TryParse(parts[2], out int relatedId))
+                    if (TryParseNotificationKey(key, out var notificationType, out var relatedId))
                     {
                         _context.UserNotificationReads.Add(new UserNotificationRead
                         {
                             UserId = userId,
-                            NotificationType = parts[0],
+                            NotificationType = notificationType,
                             RelatedId = relatedId,
                             NotificationKey = key,
                             ReadAt = DateTime.UtcNow
@@ -1377,6 +1449,31 @@ namespace JWTAuthAPI.Services
                 _logger.LogError(ex, "Error marking all notifications as read");
                 return ResponseHelper.Error<bool>($"An error occurred: {ex.Message}");
             }
+        }
+
+        private static bool TryParseNotificationKey(string notificationKey, out string notificationType, out int relatedId)
+        {
+            notificationType = string.Empty;
+            relatedId = 0;
+
+            if (string.IsNullOrWhiteSpace(notificationKey))
+            {
+                return false;
+            }
+
+            var parts = notificationKey.Split('-', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+            {
+                return false;
+            }
+
+            if (!int.TryParse(parts[^1], out relatedId))
+            {
+                return false;
+            }
+
+            notificationType = string.Join('-', parts.Take(parts.Length - 1));
+            return !string.IsNullOrWhiteSpace(notificationType);
         }
     }
 }

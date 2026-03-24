@@ -184,6 +184,8 @@ namespace JWTAuthAPI.Services
                 }
 
                 var studentDto = MapToDto(student);
+                var paidStripeAmount = await GetPaidStripeTotalByStudentIdAsync(studentId);
+                ApplyStripePaidAmount(studentDto, paidStripeAmount);
                 return ResponseHelper.Success(studentDto);
             }
             catch (Exception ex)
@@ -234,6 +236,8 @@ namespace JWTAuthAPI.Services
                     .ToListAsync();
 
                 var paidPayments = payments.Where(p => p.Status == PaymentStatus.Paid).ToList();
+                var paidStripeAmount = paidPayments.Sum(p => p.Amount);
+                var totalFeesPaid = student.FeesPaid + paidStripeAmount;
 
                 var detail = new StudentDetailDto
                 {
@@ -252,10 +256,10 @@ namespace JWTAuthAPI.Services
                     CreatedAt = student.CreatedAt,
                     UpdatedAt = student.UpdatedAt,
                     AdmissionDate = student.AdmissionDate,
-                    FeesPaid = student.FeesPaid,
+                    FeesPaid = totalFeesPaid,
                     FeesTotal = student.FeesTotal,
                     CourseFee = courseFee,
-                    FeesRemaining = student.FeesTotal - student.FeesPaid,
+                    FeesRemaining = student.FeesTotal - totalFeesPaid,
                     ReceiptNumber = student.ReceiptNumber,
 
                     // Payment summary
@@ -311,7 +315,13 @@ namespace JWTAuthAPI.Services
                     .OrderByDescending(s => s.CreatedAt)
                     .ToListAsync();
 
+                var paidStripeTotals = await GetPaidStripeTotalsByStudentIdsAsync(students.Select(s => s.StudentId));
                 var studentDtos = students.Select(MapToDto).ToList();
+                foreach (var studentDto in studentDtos)
+                {
+                    var paidStripeAmount = paidStripeTotals.GetValueOrDefault(studentDto.StudentId, 0m);
+                    ApplyStripePaidAmount(studentDto, paidStripeAmount);
+                }
                 return ResponseHelper.Success(studentDtos);
             }
             catch (Exception ex)
@@ -330,7 +340,13 @@ namespace JWTAuthAPI.Services
                     .OrderByDescending(s => s.CreatedAt)
                     .ToListAsync();
 
+                var paidStripeTotals = await GetPaidStripeTotalsByStudentIdsAsync(students.Select(s => s.StudentId));
                 var studentDtos = students.Select(MapToDto).ToList();
+                foreach (var studentDto in studentDtos)
+                {
+                    var paidStripeAmount = paidStripeTotals.GetValueOrDefault(studentDto.StudentId, 0m);
+                    ApplyStripePaidAmount(studentDto, paidStripeAmount);
+                }
                 return ResponseHelper.Success(studentDtos);
             }
             catch (Exception ex)
@@ -584,6 +600,8 @@ namespace JWTAuthAPI.Services
                 }
 
                 var studentDto = MapToDto(student);
+                var paidStripeAmount = await GetPaidStripeTotalByStudentIdAsync(student.StudentId);
+                ApplyStripePaidAmount(studentDto, paidStripeAmount);
                 return ResponseHelper.Success(studentDto);
             }
             catch (Exception ex)
@@ -764,6 +782,34 @@ namespace JWTAuthAPI.Services
                 ReceiptNumber = student.ReceiptNumber,
                 Notes = student.Notes
             };
+        }
+
+        private async Task<decimal> GetPaidStripeTotalByStudentIdAsync(int studentId)
+        {
+            return await _context.StripePayments
+                .Where(p => p.StudentId == studentId && p.Status == PaymentStatus.Paid)
+                .SumAsync(p => p.Amount);
+        }
+
+        private async Task<Dictionary<int, decimal>> GetPaidStripeTotalsByStudentIdsAsync(IEnumerable<int> studentIds)
+        {
+            var ids = studentIds.Distinct().ToList();
+            if (!ids.Any())
+            {
+                return new Dictionary<int, decimal>();
+            }
+
+            return await _context.StripePayments
+                .Where(p => ids.Contains(p.StudentId) && p.Status == PaymentStatus.Paid)
+                .GroupBy(p => p.StudentId)
+                .Select(g => new { StudentId = g.Key, Total = g.Sum(x => x.Amount) })
+                .ToDictionaryAsync(x => x.StudentId, x => x.Total);
+        }
+
+        private static void ApplyStripePaidAmount(StudentDto studentDto, decimal paidStripeAmount)
+        {
+            studentDto.FeesPaid += paidStripeAmount;
+            studentDto.FeesRemaining = studentDto.FeesTotal - studentDto.FeesPaid;
         }
 
         public async Task<ApiResponse<List<CashPaymentRecordDto>>> GetCashPaymentsByStudentIdAsync(int studentId)
