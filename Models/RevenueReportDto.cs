@@ -5,7 +5,13 @@ namespace JWTAuthAPI.Models
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public decimal TotalRevenue { get; set; }
+        /// <summary>
+        /// Tuition + Stripe Revenue (all tuition payments via Stripe, both installment and direct). Display as: "Tuition + Stripe Revenue"
+        /// </summary>
         public decimal StripeRevenue { get; set; }
+        /// <summary>
+        /// Cash/QR/Order Revenue (all cash payments and paid shop orders). Display as: "Cash/QR/Order Revenue"
+        /// </summary>
         public decimal CashRevenue { get; set; }
         public int TotalPayments { get; set; }
         public int CashPaymentCount { get; set; }

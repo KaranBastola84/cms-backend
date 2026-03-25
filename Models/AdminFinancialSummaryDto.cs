@@ -11,10 +11,25 @@ namespace JWTAuthAPI.Models
 
     public class RevenueMetrics
     {
+        /// <summary>
+        /// Total revenue (Tuition + Stripe + Cash + Orders). Display as: "Total Revenue (All Sources)"
+        /// </summary>
         public decimal TotalRevenue { get; set; }
+        /// <summary>
+        /// Revenue collected this month. Display as: "This Month's Revenue (All Sources)"
+        /// </summary>
         public decimal RevenueThisMonth { get; set; }
+        /// <summary>
+        /// Revenue collected this week. Display as: "This Week's Revenue (All Sources)"
+        /// </summary>
         public decimal RevenueThisWeek { get; set; }
+        /// <summary>
+        /// Revenue collected today. Display as: "Today's Revenue (All Sources)"
+        /// </summary>
         public decimal RevenueToday { get; set; }
+        /// <summary>
+        /// Average revenue per paying student. Display as: "Avg. Revenue per Student"
+        /// </summary>
         public decimal AverageRevenuePerStudent { get; set; }
     }
 

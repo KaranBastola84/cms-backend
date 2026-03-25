@@ -172,6 +172,9 @@ namespace JWTAuthAPI.Services
                     .ToListAsync();
 
                 var cashPayments = await _context.CashPayments.ToListAsync();
+                var paidOrders = await _context.Orders
+                    .Where(o => o.PaymentStatus == PaymentStatus.Paid)
+                    .ToListAsync();
 
                 // Revenue metrics
                 var todayDate = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
@@ -205,10 +208,26 @@ namespace JWTAuthAPI.Services
                     .Where(c => c.PaidAt >= monthStart)
                     .Sum(c => c.Amount);
 
+                var todayOrderRevenue = paidOrders
+                    .Where(o => o.PaidDate.HasValue && o.PaidDate.Value.Date == todayDate)
+                    .Sum(o => o.TotalAmount);
+                var weekOrderRevenue = paidOrders
+                    .Where(o => o.PaidDate.HasValue && o.PaidDate >= weekAgo)
+                    .Sum(o => o.TotalAmount);
+                var monthOrderRevenue = paidOrders
+                    .Where(o => o.PaidDate.HasValue && o.PaidDate >= monthStart)
+                    .Sum(o => o.TotalAmount);
+
+                // Revenue buckets:
+                // - installmentRevenueTotal: tuition installment collections
+                // - directStripeRevenueTotal: non-installment Stripe collections
+                // - cashRevenueTotal: student cash payments
+                // - orderRevenueTotal: paid shop orders (cash/QR/COD)
                 var installmentRevenueTotal = paidInstallments.Sum(i => i.Amount);
                 var directStripeRevenueTotal = directStripePayments.Sum(p => p.Amount);
                 var cashRevenueTotal = cashPayments.Sum(c => c.Amount);
-                var totalRevenue = installmentRevenueTotal + directStripeRevenueTotal + cashRevenueTotal;
+                var orderRevenueTotal = paidOrders.Sum(o => o.TotalAmount);
+                var totalRevenue = installmentRevenueTotal + directStripeRevenueTotal + cashRevenueTotal + orderRevenueTotal;
 
                 var payingStudentCount = paidInstallments
                     .Where(i => i.PaymentPlan != null)
@@ -221,9 +240,9 @@ namespace JWTAuthAPI.Services
                 var revenueMetrics = new RevenueMetrics
                 {
                     TotalRevenue = totalRevenue,
-                    RevenueToday = todayInstallmentRevenue + todayDirectStripeRevenue + todayCashRevenue,
-                    RevenueThisWeek = weekInstallmentRevenue + weekDirectStripeRevenue + weekCashRevenue,
-                    RevenueThisMonth = monthInstallmentRevenue + monthDirectStripeRevenue + monthCashRevenue,
+                    RevenueToday = todayInstallmentRevenue + todayDirectStripeRevenue + todayCashRevenue + todayOrderRevenue,
+                    RevenueThisWeek = weekInstallmentRevenue + weekDirectStripeRevenue + weekCashRevenue + weekOrderRevenue,
+                    RevenueThisMonth = monthInstallmentRevenue + monthDirectStripeRevenue + monthCashRevenue + monthOrderRevenue,
                     AverageRevenuePerStudent = payingStudentCount > 0
                         ? Math.Round(totalRevenue / payingStudentCount, 2)
                         : 0
