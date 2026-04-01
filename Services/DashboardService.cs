@@ -205,6 +205,213 @@ namespace JWTAuthAPI.Services
             }
         }
 
+        public async Task<ApiResponse<StaffQuickActionsDto>> GetStaffQuickActionsAsync(int userId, string role)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                var today = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+                var tomorrow = today.AddDays(1);
+                var next3DaysInclusive = today.AddDays(4);
+                var weekAgo = now.AddDays(-7);
+
+                var pendingInquiries = await _context.Inquiries
+                    .CountAsync(i => i.Status == InquiryStatus.Pending || i.Status == InquiryStatus.InProgress);
+
+                var overdueInstallments = await _context.Installments
+                    .CountAsync(i =>
+                        (i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue) &&
+                        i.DueDate < today);
+
+                var installmentsDueToday = await _context.Installments
+                    .CountAsync(i =>
+                        (i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue) &&
+                        i.DueDate >= today &&
+                        i.DueDate < tomorrow);
+
+                var batchesStartingNext3Days = await _context.Batches
+                    .CountAsync(b => b.IsActive && b.StartDate >= today && b.StartDate < next3DaysInclusive);
+
+                var totalActiveBatches = await _context.Batches
+                    .CountAsync(b => b.IsActive && b.StartDate <= now && (!b.EndDate.HasValue || b.EndDate >= now));
+
+                var markedActiveBatches = await (from a in _context.Attendances
+                                                 join b in _context.Batches on a.BatchId equals b.BatchId
+                                                 where a.AttendanceDate >= today
+                                                       && a.AttendanceDate < tomorrow
+                                                       && b.IsActive
+                                                       && b.StartDate <= now
+                                                       && (!b.EndDate.HasValue || b.EndDate >= now)
+                                                 select a.BatchId)
+                    .Distinct()
+                    .CountAsync();
+
+                var newStudentsThisWeek = await _context.Students
+                    .CountAsync(s => s.CreatedAt >= weekAgo);
+
+                var installmentPaymentsToday = await _context.Installments
+                    .Where(i => i.Status == InstallmentStatus.Paid && i.PaidDate.HasValue && i.PaidDate.Value >= today && i.PaidDate.Value < tomorrow)
+                    .SumAsync(i => (decimal?)i.Amount);
+
+                var cashPaymentsToday = await _context.CashPayments
+                    .Where(c => c.PaidAt >= today && c.PaidAt < tomorrow)
+                    .SumAsync(c => (decimal?)c.Amount);
+
+                var directStripePaymentsToday = await _context.StripePayments
+                    .Where(p => p.Status == PaymentStatus.Paid && !p.InstallmentId.HasValue && p.UpdatedAt >= today && p.UpdatedAt < tomorrow)
+                    .SumAsync(p => (decimal?)p.Amount);
+
+                var unmarkedActiveBatches = Math.Max(0, totalActiveBatches - markedActiveBatches);
+                var paymentsCollectedToday =
+                    (installmentPaymentsToday ?? 0) +
+                    (cashPaymentsToday ?? 0) +
+                    (directStripePaymentsToday ?? 0);
+
+                var quickActions = new StaffQuickActionsDto
+                {
+                    PendingInquiries = pendingInquiries,
+                    OverdueInstallments = overdueInstallments,
+                    InstallmentsDueToday = installmentsDueToday,
+                    BatchesStartingNext3Days = batchesStartingNext3Days,
+                    UnmarkedActiveBatchesToday = unmarkedActiveBatches,
+                    NewStudentsThisWeek = newStudentsThisWeek,
+                    PaymentsCollectedToday = paymentsCollectedToday
+                };
+
+                return ResponseHelper.Success(quickActions);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting staff quick actions for user {UserId} role {Role}", userId, role);
+                return ResponseHelper.Error<StaffQuickActionsDto>($"An error occurred: {ex.Message}");
+            }
+        }
+
+        public async Task<ApiResponse<List<StaffTimelineItemDto>>> GetStaffTimelineAsync(int userId, string role, int limit = 20)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                var today = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+                var next7Days = today.AddDays(7);
+                var safeLimit = Math.Clamp(limit, 1, 100);
+
+                var recentInquiries = await _context.Inquiries
+                    .OrderByDescending(i => i.CreatedAt)
+                    .Take(safeLimit)
+                    .Select(i => new
+                    {
+                        InquiryId = i.Id,
+                        i.FullName,
+                        i.CourseInterest,
+                        i.Status,
+                        i.CreatedAt
+                    })
+                    .ToListAsync();
+
+                var recentStudents = await _context.Students
+                    .OrderByDescending(s => s.CreatedAt)
+                    .Take(safeLimit)
+                    .Select(s => new
+                    {
+                        s.StudentId,
+                        s.Name,
+                        s.Status,
+                        s.CreatedAt
+                    })
+                    .ToListAsync();
+
+                var recentInstallmentPayments = await _context.Installments
+                    .Include(i => i.PaymentPlan)
+                        .ThenInclude(p => p!.Student)
+                    .Where(i => i.Status == InstallmentStatus.Paid && i.PaidDate.HasValue)
+                    .OrderByDescending(i => i.PaidDate)
+                    .Take(safeLimit)
+                    .Select(i => new
+                    {
+                        i.InstallmentId,
+                        PaidDate = i.PaidDate!.Value,
+                        i.Amount,
+                        StudentName = i.PaymentPlan != null && i.PaymentPlan.Student != null
+                            ? i.PaymentPlan.Student.Name
+                            : "Unknown"
+                    })
+                    .ToListAsync();
+
+                var upcomingBatches = await _context.Batches
+                    .Include(b => b.Course)
+                    .Where(b => b.IsActive && b.StartDate >= today && b.StartDate <= next7Days)
+                    .OrderBy(b => b.StartDate)
+                    .Take(safeLimit)
+                    .Select(b => new
+                    {
+                        b.BatchId,
+                        BatchName = b.Name,
+                        CourseName = b.Course != null ? b.Course.Name : null,
+                        b.StartDate
+                    })
+                    .ToListAsync();
+
+                var timeline = new List<StaffTimelineItemDto>();
+
+                timeline.AddRange(recentInquiries.Select(i => new StaffTimelineItemDto
+                {
+                    EventType = "inquiry",
+                    Timestamp = i.CreatedAt,
+                    Title = $"New inquiry from {i.FullName}",
+                    Description = string.IsNullOrWhiteSpace(i.CourseInterest)
+                        ? "Prospect requested information"
+                        : $"Interested in {i.CourseInterest}",
+                    Status = i.Status.ToString(),
+                    ActionUrl = $"/admin/inquiries/{i.InquiryId}"
+                }));
+
+                timeline.AddRange(recentStudents.Select(s => new StaffTimelineItemDto
+                {
+                    EventType = "student",
+                    Timestamp = s.CreatedAt,
+                    Title = $"Student registered: {s.Name}",
+                    Description = "New student record created",
+                    Status = s.Status.ToString(),
+                    ActionUrl = $"/staff/students/{s.StudentId}"
+                }));
+
+                timeline.AddRange(recentInstallmentPayments.Select(p => new StaffTimelineItemDto
+                {
+                    EventType = "payment",
+                    Timestamp = p.PaidDate,
+                    Title = $"Payment received from {p.StudentName}",
+                    Description = $"Installment payment of {p.Amount:0.##}",
+                    Status = "Paid",
+                    ActionUrl = "/admin/finance/payment-plans"
+                }));
+
+                timeline.AddRange(upcomingBatches.Select(b => new StaffTimelineItemDto
+                {
+                    EventType = "batch",
+                    Timestamp = b.StartDate,
+                    Title = $"Batch starting soon: {b.BatchName}",
+                    Description = b.CourseName != null
+                        ? $"{b.CourseName} starts in {Math.Max(0, (int)(b.StartDate.Date - today).TotalDays)} day(s)"
+                        : $"Starts in {Math.Max(0, (int)(b.StartDate.Date - today).TotalDays)} day(s)",
+                    Status = "Upcoming",
+                    ActionUrl = $"/staff/batches/{b.BatchId}"
+                }));
+
+                var orderedTimeline = timeline
+                    .OrderByDescending(t => t.Timestamp)
+                    .Take(safeLimit)
+                    .ToList();
+
+                return ResponseHelper.Success(orderedTimeline);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting staff timeline for user {UserId} role {Role}", userId, role);
+                return ResponseHelper.Error<List<StaffTimelineItemDto>>($"An error occurred: {ex.Message}");
+            }
+        }
+
         public async Task<ApiResponse<AdminDashboardOverviewDto>> GetAdminOverviewAsync()
         {
             try

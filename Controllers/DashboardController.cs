@@ -59,6 +59,70 @@ namespace JWTAuthAPI.Controllers
         }
 
         /// <summary>
+        /// Get quick-action counts for staff/trainer dashboard cards.
+        /// </summary>
+        [HttpGet("staff/quick-actions")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        public async Task<ActionResult<ApiResponse<StaffQuickActionsDto>>> GetStaffQuickActions()
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(ResponseHelper.Error<StaffQuickActionsDto>("User ID not found in token", 401));
+                }
+
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.GetStaffQuickActionsAsync(userId, role);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetStaffQuickActions endpoint");
+                return StatusCode(500, ResponseHelper.Error<StaffQuickActionsDto>("An error occurred while fetching quick actions", 500));
+            }
+        }
+
+        /// <summary>
+        /// Get recent operational timeline events for staff/trainer dashboard.
+        /// </summary>
+        /// <param name="limit">Maximum number of events (default: 20, max: 100)</param>
+        [HttpGet("staff/timeline")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        public async Task<ActionResult<ApiResponse<List<StaffTimelineItemDto>>>> GetStaffTimeline([FromQuery] int limit = 20)
+        {
+            try
+            {
+                if (limit < 1 || limit > 100)
+                {
+                    return BadRequest(ResponseHelper.Error<List<StaffTimelineItemDto>>("Limit must be between 1 and 100", 400));
+                }
+
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(ResponseHelper.Error<List<StaffTimelineItemDto>>("User ID not found in token", 401));
+                }
+
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.GetStaffTimelineAsync(userId, role, limit);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetStaffTimeline endpoint");
+                return StatusCode(500, ResponseHelper.Error<List<StaffTimelineItemDto>>("An error occurred while fetching timeline", 500));
+            }
+        }
+
+        /// <summary>
         /// Get admin dashboard overview with statistics on students, courses, batches, staff, and inquiries
         /// </summary>
         [HttpGet("overview")]
