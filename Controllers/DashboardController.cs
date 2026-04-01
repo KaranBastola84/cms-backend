@@ -24,6 +24,41 @@ namespace JWTAuthAPI.Controllers
         }
 
         /// <summary>
+        /// Get operational dashboard for staff/trainer users.
+        /// Includes student, batch, inquiry, attendance, and payment-due snapshots.
+        /// </summary>
+        [HttpGet("staff/overview")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        public async Task<ActionResult<ApiResponse<StaffDashboardOverviewDto>>> GetStaffOverview([FromQuery] int limit = 5)
+        {
+            try
+            {
+                if (limit < 1 || limit > 20)
+                {
+                    return BadRequest(ResponseHelper.Error<StaffDashboardOverviewDto>("Limit must be between 1 and 20", 400));
+                }
+
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(ResponseHelper.Error<StaffDashboardOverviewDto>("User ID not found in token", 401));
+                }
+
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.GetStaffOverviewAsync(userId, role, limit);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetStaffOverview endpoint");
+                return StatusCode(500, ResponseHelper.Error<StaffDashboardOverviewDto>("An error occurred while fetching staff dashboard data", 500));
+            }
+        }
+
+        /// <summary>
         /// Get admin dashboard overview with statistics on students, courses, batches, staff, and inquiries
         /// </summary>
         [HttpGet("overview")]

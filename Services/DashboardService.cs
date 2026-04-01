@@ -18,6 +18,193 @@ namespace JWTAuthAPI.Services
             _logger = logger;
         }
 
+        public async Task<ApiResponse<StaffDashboardOverviewDto>> GetStaffOverviewAsync(int userId, string role, int limit = 5)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                var today = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+                var next7Days = today.AddDays(7);
+                var next14Days = today.AddDays(14);
+
+                var totalStudents = await _context.Students.CountAsync();
+                var activeStudents = await _context.Students
+                    .CountAsync(s => s.Status == StudentStatus.Active || s.Status == StudentStatus.Enrolled);
+
+                var activeBatches = await _context.Batches
+                    .CountAsync(b => b.IsActive && b.StartDate <= now && (!b.EndDate.HasValue || b.EndDate >= now));
+
+                var pendingInquiryCount = await _context.Inquiries
+                    .CountAsync(i => i.Status == InquiryStatus.Pending || i.Status == InquiryStatus.InProgress);
+
+                var overdueInstallments = await _context.Installments
+                    .CountAsync(i =>
+                        (i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue) &&
+                        i.DueDate < today);
+
+                var paymentsDueNext7Days = await _context.Installments
+                    .CountAsync(i =>
+                        (i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue) &&
+                        i.DueDate >= today &&
+                        i.DueDate <= next7Days);
+
+                var outstandingAmount = await _context.PaymentPlans
+                    .Where(p => p.Status == PaymentPlanStatus.Active ||
+                                p.Status == PaymentPlanStatus.Defaulted ||
+                                p.Status == PaymentPlanStatus.Suspended)
+                    .SumAsync(p => (decimal?)p.BalanceAmount) ?? 0;
+
+                var attendanceToday = await _context.Attendances
+                    .Where(a => a.AttendanceDate.Date == today)
+                    .ToListAsync();
+
+                var attendancePresent = attendanceToday.Count(a => a.Status == AttendanceStatus.Present);
+                var attendanceAbsent = attendanceToday.Count(a => a.Status == AttendanceStatus.Absent);
+                var attendanceLate = attendanceToday.Count(a => a.Status == AttendanceStatus.Late);
+
+                var upcomingBatchesRaw = await _context.Batches
+                    .Include(b => b.Course)
+                    .Include(b => b.Students)
+                    .Where(b => b.StartDate >= today && b.StartDate <= next14Days)
+                    .OrderBy(b => b.StartDate)
+                    .Take(limit)
+                    .Select(b => new
+                    {
+                        b.BatchId,
+                        BatchName = b.Name,
+                        CourseName = b.Course != null ? b.Course.Name : null,
+                        b.StartDate,
+                        EnrolledStudents = b.Students.Count,
+                        Capacity = b.MaxStudents
+                    })
+                    .ToListAsync();
+
+                var upcomingBatches = upcomingBatchesRaw
+                    .Select(b => new StaffUpcomingBatchDto
+                    {
+                        BatchId = b.BatchId,
+                        BatchName = b.BatchName,
+                        CourseName = b.CourseName,
+                        StartDate = b.StartDate,
+                        DaysUntilStart = Math.Max(0, (int)(b.StartDate.Date - today).TotalDays),
+                        EnrolledStudents = b.EnrolledStudents,
+                        Capacity = b.Capacity
+                    })
+                    .ToList();
+
+                var pendingInquiriesRaw = await _context.Inquiries
+                    .Where(i => i.Status == InquiryStatus.Pending || i.Status == InquiryStatus.InProgress)
+                    .OrderBy(i => i.CreatedAt)
+                    .Take(limit)
+                    .Select(i => new
+                    {
+                        InquiryId = i.Id,
+                        i.FullName,
+                        i.CourseInterest,
+                        i.CreatedAt,
+                        i.Status
+                    })
+                    .ToListAsync();
+
+                var pendingInquiries = pendingInquiriesRaw
+                    .Select(i => new StaffPendingInquiryDto
+                    {
+                        InquiryId = i.InquiryId,
+                        FullName = i.FullName,
+                        CourseInterest = i.CourseInterest,
+                        CreatedAt = i.CreatedAt,
+                        DaysOpen = Math.Max(0, (int)(now - i.CreatedAt).TotalDays),
+                        Status = i.Status.ToString()
+                    })
+                    .ToList();
+
+                var upcomingPaymentsRaw = await _context.Installments
+                    .Include(i => i.PaymentPlan)
+                        .ThenInclude(p => p!.Student)
+                    .Where(i => (i.Status == InstallmentStatus.Pending || i.Status == InstallmentStatus.Overdue)
+                                && i.DueDate <= next7Days)
+                    .OrderBy(i => i.DueDate)
+                    .Take(limit)
+                    .Select(i => new
+                    {
+                        i.InstallmentId,
+                        StudentId = i.PaymentPlan != null ? i.PaymentPlan.StudentId : 0,
+                        StudentName = i.PaymentPlan != null && i.PaymentPlan.Student != null
+                            ? i.PaymentPlan.Student.Name
+                            : "Unknown",
+                        i.Amount,
+                        i.DueDate,
+                        i.Status
+                    })
+                    .ToListAsync();
+
+                var upcomingPayments = upcomingPaymentsRaw
+                    .Select(i => new StaffPaymentDueDto
+                    {
+                        InstallmentId = i.InstallmentId,
+                        StudentId = i.StudentId,
+                        StudentName = i.StudentName,
+                        Amount = i.Amount,
+                        DueDate = i.DueDate,
+                        DaysUntilDue = (int)(i.DueDate.Date - today).TotalDays,
+                        Status = i.Status.ToString()
+                    })
+                    .ToList();
+
+                var recentStudents = await _context.Students
+                    .OrderByDescending(s => s.CreatedAt)
+                    .Take(limit)
+                    .Select(s => new StaffRecentStudentDto
+                    {
+                        StudentId = s.StudentId,
+                        Name = s.Name,
+                        CourseName = _context.Courses
+                            .Where(c => s.CourseId.HasValue && c.CourseId == s.CourseId.Value)
+                            .Select(c => c.Name)
+                            .FirstOrDefault(),
+                        CreatedAt = s.CreatedAt,
+                        Status = s.Status.ToString()
+                    })
+                    .ToListAsync();
+
+                var overview = new StaffDashboardOverviewDto
+                {
+                    Summary = new StaffDashboardSummaryDto
+                    {
+                        TotalStudents = totalStudents,
+                        ActiveStudents = activeStudents,
+                        ActiveBatches = activeBatches,
+                        PendingInquiries = pendingInquiryCount,
+                        OverdueInstallments = overdueInstallments,
+                        PaymentsDueNext7Days = paymentsDueNext7Days,
+                        OutstandingAmount = outstandingAmount
+                    },
+                    AttendanceToday = new StaffAttendanceSnapshotDto
+                    {
+                        Date = today,
+                        TotalMarked = attendanceToday.Count,
+                        Present = attendancePresent,
+                        Absent = attendanceAbsent,
+                        Late = attendanceLate,
+                        AttendanceRate = attendanceToday.Count > 0
+                            ? Math.Round((decimal)attendancePresent / attendanceToday.Count * 100, 2)
+                            : 0
+                    },
+                    UpcomingBatches = upcomingBatches,
+                    PendingInquiries = pendingInquiries,
+                    UpcomingPayments = upcomingPayments,
+                    RecentStudents = recentStudents
+                };
+
+                return ResponseHelper.Success(overview);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting staff dashboard overview for user {UserId} role {Role}", userId, role);
+                return ResponseHelper.Error<StaffDashboardOverviewDto>($"An error occurred: {ex.Message}");
+            }
+        }
+
         public async Task<ApiResponse<AdminDashboardOverviewDto>> GetAdminOverviewAsync()
         {
             try

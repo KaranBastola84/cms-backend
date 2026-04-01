@@ -5,6 +5,7 @@ namespace JWTAuthAPI.Services
     public interface IDashboardService
     {
         Task<ApiResponse<AdminDashboardOverviewDto>> GetAdminOverviewAsync();
+        Task<ApiResponse<StaffDashboardOverviewDto>> GetStaffOverviewAsync(int userId, string role, int limit = 5);
         Task<ApiResponse<AdminFinancialSummaryDto>> GetFinancialSummaryAsync();
         Task<ApiResponse<AdminRecentActivitiesDto>> GetRecentActivitiesAsync(int limit = 10);
         Task<ApiResponse<AdminAlertsDto>> GetAlertsAsync();
