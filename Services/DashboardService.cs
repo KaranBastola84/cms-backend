@@ -412,6 +412,370 @@ namespace JWTAuthAPI.Services
             }
         }
 
+        public async Task<ApiResponse<TrainerDashboardOverviewDto>> GetTrainerOverviewAsync(int userId, string role, int limit = 5)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                var today = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+                var tomorrow = today.AddDays(1);
+                var next7Days = today.AddDays(7);
+                var next14Days = today.AddDays(14);
+                var weekWindowStart = today.AddDays(-6);
+
+                var trainerBatchIds = await _context.Batches
+                    .Where(b => b.TrainerId == userId)
+                    .Select(b => b.BatchId)
+                    .ToListAsync();
+
+                if (!trainerBatchIds.Any())
+                {
+                    return ResponseHelper.Success(new TrainerDashboardOverviewDto
+                    {
+                        AttendanceToday = new TrainerAttendanceSnapshotDto
+                        {
+                            Date = today
+                        }
+                    });
+                }
+
+                var activeBatchIds = await _context.Batches
+                    .Where(b => trainerBatchIds.Contains(b.BatchId)
+                                && b.IsActive
+                                && b.StartDate <= now
+                                && (!b.EndDate.HasValue || b.EndDate >= now))
+                    .Select(b => b.BatchId)
+                    .ToListAsync();
+
+                var upcomingBatchesNext7Days = await _context.Batches
+                    .CountAsync(b => trainerBatchIds.Contains(b.BatchId)
+                                     && b.StartDate >= today
+                                     && b.StartDate <= next7Days);
+
+                var totalStudentsInMyBatches = await _context.Students
+                    .CountAsync(s => s.BatchId.HasValue && trainerBatchIds.Contains(s.BatchId.Value));
+
+                var attendanceToday = await _context.Attendances
+                    .Where(a => trainerBatchIds.Contains(a.BatchId)
+                                && a.AttendanceDate >= today
+                                && a.AttendanceDate < tomorrow)
+                    .ToListAsync();
+
+                var attendancePresent = attendanceToday.Count(a => a.Status == AttendanceStatus.Present);
+                var attendanceAbsent = attendanceToday.Count(a => a.Status == AttendanceStatus.Absent);
+                var attendanceLate = attendanceToday.Count(a => a.Status == AttendanceStatus.Late);
+                var studentsMarkedToday = attendanceToday
+                    .Select(a => a.StudentId)
+                    .Distinct()
+                    .Count();
+
+                var attendanceLast7Days = await _context.Attendances
+                    .Where(a => trainerBatchIds.Contains(a.BatchId)
+                                && a.AttendanceDate >= weekWindowStart
+                                && a.AttendanceDate < tomorrow)
+                    .ToListAsync();
+
+                var attendanceRateLast7Days = attendanceLast7Days.Count > 0
+                    ? Math.Round((decimal)attendanceLast7Days.Count(a => a.Status == AttendanceStatus.Present) / attendanceLast7Days.Count * 100, 2)
+                    : 0;
+
+                var activeBatches = await _context.Batches
+                    .Include(b => b.Course)
+                    .Include(b => b.Students)
+                    .Where(b => activeBatchIds.Contains(b.BatchId))
+                    .OrderBy(b => b.Name)
+                    .Take(limit)
+                    .Select(b => new TrainerBatchSnapshotDto
+                    {
+                        BatchId = b.BatchId,
+                        BatchName = b.Name,
+                        CourseName = b.Course != null ? b.Course.Name : null,
+                        TimeSlot = b.TimeSlot,
+                        StartDate = b.StartDate,
+                        EndDate = b.EndDate,
+                        TotalStudents = b.Students.Count,
+                        Capacity = b.MaxStudents
+                    })
+                    .ToListAsync();
+
+                var upcomingBatches = await _context.Batches
+                    .Include(b => b.Course)
+                    .Where(b => trainerBatchIds.Contains(b.BatchId)
+                                && b.StartDate >= today
+                                && b.StartDate <= next14Days)
+                    .OrderBy(b => b.StartDate)
+                    .Take(limit)
+                    .Select(b => new TrainerUpcomingBatchDto
+                    {
+                        BatchId = b.BatchId,
+                        BatchName = b.Name,
+                        CourseName = b.Course != null ? b.Course.Name : null,
+                        TimeSlot = b.TimeSlot,
+                        StartDate = b.StartDate,
+                        DaysUntilStart = Math.Max(0, (int)(b.StartDate.Date - today).TotalDays)
+                    })
+                    .ToListAsync();
+
+                var recentStudents = await _context.Students
+                    .Where(s => s.BatchId.HasValue && trainerBatchIds.Contains(s.BatchId.Value))
+                    .OrderByDescending(s => s.CreatedAt)
+                    .Take(limit)
+                    .Select(s => new TrainerRecentStudentDto
+                    {
+                        StudentId = s.StudentId,
+                        StudentName = s.Name,
+                        BatchName = _context.Batches
+                            .Where(b => s.BatchId.HasValue && b.BatchId == s.BatchId.Value)
+                            .Select(b => b.Name)
+                            .FirstOrDefault(),
+                        CourseName = _context.Courses
+                            .Where(c => s.CourseId.HasValue && c.CourseId == s.CourseId.Value)
+                            .Select(c => c.Name)
+                            .FirstOrDefault(),
+                        CreatedAt = s.CreatedAt,
+                        Status = s.Status.ToString()
+                    })
+                    .ToListAsync();
+
+                var overview = new TrainerDashboardOverviewDto
+                {
+                    Summary = new TrainerDashboardSummaryDto
+                    {
+                        AssignedBatches = trainerBatchIds.Count,
+                        ActiveBatches = activeBatchIds.Count,
+                        UpcomingBatchesNext7Days = upcomingBatchesNext7Days,
+                        TotalStudentsInMyBatches = totalStudentsInMyBatches,
+                        StudentsMarkedToday = studentsMarkedToday,
+                        AttendanceRateLast7Days = attendanceRateLast7Days
+                    },
+                    AttendanceToday = new TrainerAttendanceSnapshotDto
+                    {
+                        Date = today,
+                        TotalMarked = attendanceToday.Count,
+                        Present = attendancePresent,
+                        Absent = attendanceAbsent,
+                        Late = attendanceLate,
+                        AttendanceRate = attendanceToday.Count > 0
+                            ? Math.Round((decimal)attendancePresent / attendanceToday.Count * 100, 2)
+                            : 0
+                    },
+                    ActiveBatches = activeBatches,
+                    UpcomingBatches = upcomingBatches,
+                    RecentStudents = recentStudents
+                };
+
+                return ResponseHelper.Success(overview);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting trainer dashboard overview for user {UserId} role {Role}", userId, role);
+                return ResponseHelper.Error<TrainerDashboardOverviewDto>($"An error occurred: {ex.Message}");
+            }
+        }
+
+        public async Task<ApiResponse<TrainerQuickActionsDto>> GetTrainerQuickActionsAsync(int userId, string role)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                var today = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+                var tomorrow = today.AddDays(1);
+                var next3DaysInclusive = today.AddDays(4);
+                var weekAgo = now.AddDays(-7);
+
+                var trainerBatchIds = await _context.Batches
+                    .Where(b => b.TrainerId == userId)
+                    .Select(b => b.BatchId)
+                    .ToListAsync();
+
+                if (!trainerBatchIds.Any())
+                {
+                    return ResponseHelper.Success(new TrainerQuickActionsDto());
+                }
+
+                var activeBatchIds = await _context.Batches
+                    .Where(b => trainerBatchIds.Contains(b.BatchId)
+                                && b.IsActive
+                                && b.StartDate <= now
+                                && (!b.EndDate.HasValue || b.EndDate >= now))
+                    .Select(b => b.BatchId)
+                    .ToListAsync();
+
+                var markedActiveBatchesToday = activeBatchIds.Any()
+                    ? await _context.Attendances
+                        .Where(a => activeBatchIds.Contains(a.BatchId)
+                                    && a.AttendanceDate >= today
+                                    && a.AttendanceDate < tomorrow)
+                        .Select(a => a.BatchId)
+                        .Distinct()
+                        .CountAsync()
+                    : 0;
+
+                var studentsToMarkToday = activeBatchIds.Any()
+                    ? await _context.Students
+                        .CountAsync(s => s.BatchId.HasValue && activeBatchIds.Contains(s.BatchId.Value))
+                    : 0;
+
+                var attendanceMarkedToday = activeBatchIds.Any()
+                    ? await _context.Attendances
+                        .CountAsync(a => activeBatchIds.Contains(a.BatchId)
+                                         && a.AttendanceDate >= today
+                                         && a.AttendanceDate < tomorrow)
+                    : 0;
+
+                var upcomingBatchesNext3Days = await _context.Batches
+                    .CountAsync(b => trainerBatchIds.Contains(b.BatchId)
+                                     && b.StartDate >= today
+                                     && b.StartDate < next3DaysInclusive);
+
+                var newStudentsThisWeek = await _context.Students
+                    .CountAsync(s => s.BatchId.HasValue
+                                     && trainerBatchIds.Contains(s.BatchId.Value)
+                                     && s.CreatedAt >= weekAgo);
+
+                var quickActions = new TrainerQuickActionsDto
+                {
+                    ActiveBatchesToday = activeBatchIds.Count,
+                    UnmarkedActiveBatchesToday = Math.Max(0, activeBatchIds.Count - markedActiveBatchesToday),
+                    StudentsToMarkToday = studentsToMarkToday,
+                    AttendanceMarkedToday = attendanceMarkedToday,
+                    UpcomingBatchesNext3Days = upcomingBatchesNext3Days,
+                    NewStudentsThisWeek = newStudentsThisWeek
+                };
+
+                return ResponseHelper.Success(quickActions);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting trainer quick actions for user {UserId} role {Role}", userId, role);
+                return ResponseHelper.Error<TrainerQuickActionsDto>($"An error occurred: {ex.Message}");
+            }
+        }
+
+        public async Task<ApiResponse<List<TrainerTimelineItemDto>>> GetTrainerTimelineAsync(int userId, string role, int limit = 20)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                var today = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+                var next7Days = today.AddDays(7);
+                var safeLimit = Math.Clamp(limit, 1, 100);
+
+                var trainerBatchIds = await _context.Batches
+                    .Where(b => b.TrainerId == userId)
+                    .Select(b => b.BatchId)
+                    .ToListAsync();
+
+                if (!trainerBatchIds.Any())
+                {
+                    return ResponseHelper.Success(new List<TrainerTimelineItemDto>());
+                }
+
+                var recentAttendance = await _context.Attendances
+                    .Where(a => trainerBatchIds.Contains(a.BatchId))
+                    .OrderByDescending(a => a.CreatedAt)
+                    .Take(safeLimit)
+                    .Select(a => new
+                    {
+                        a.AttendanceId,
+                        a.BatchId,
+                        a.StudentId,
+                        a.AttendanceDate,
+                        a.CreatedAt,
+                        a.Status,
+                        StudentName = _context.Students
+                            .Where(s => s.StudentId == a.StudentId)
+                            .Select(s => s.Name)
+                            .FirstOrDefault() ?? "Student",
+                        BatchName = _context.Batches
+                            .Where(b => b.BatchId == a.BatchId)
+                            .Select(b => b.Name)
+                            .FirstOrDefault() ?? "Batch"
+                    })
+                    .ToListAsync();
+
+                var recentStudents = await _context.Students
+                    .Where(s => s.BatchId.HasValue && trainerBatchIds.Contains(s.BatchId.Value))
+                    .OrderByDescending(s => s.CreatedAt)
+                    .Take(safeLimit)
+                    .Select(s => new
+                    {
+                        s.StudentId,
+                        s.Name,
+                        s.CreatedAt,
+                        s.Status,
+                        BatchName = _context.Batches
+                            .Where(b => s.BatchId.HasValue && b.BatchId == s.BatchId.Value)
+                            .Select(b => b.Name)
+                            .FirstOrDefault() ?? "Batch"
+                    })
+                    .ToListAsync();
+
+                var upcomingBatches = await _context.Batches
+                    .Include(b => b.Course)
+                    .Where(b => trainerBatchIds.Contains(b.BatchId)
+                                && b.IsActive
+                                && b.StartDate >= today
+                                && b.StartDate <= next7Days)
+                    .OrderBy(b => b.StartDate)
+                    .Take(safeLimit)
+                    .Select(b => new
+                    {
+                        b.BatchId,
+                        BatchName = b.Name,
+                        CourseName = b.Course != null ? b.Course.Name : null,
+                        b.StartDate
+                    })
+                    .ToListAsync();
+
+                var timeline = new List<TrainerTimelineItemDto>();
+
+                timeline.AddRange(recentAttendance.Select(a => new TrainerTimelineItemDto
+                {
+                    EventType = "attendance",
+                    Timestamp = a.CreatedAt,
+                    Title = $"Attendance marked: {a.StudentName}",
+                    Description = $"{a.BatchName} - {a.Status}",
+                    Status = a.Status.ToString(),
+                    ActionUrl = $"/trainer/attendance?batchId={a.BatchId}&date={a.AttendanceDate:yyyy-MM-dd}"
+                }));
+
+                timeline.AddRange(recentStudents.Select(s => new TrainerTimelineItemDto
+                {
+                    EventType = "student",
+                    Timestamp = s.CreatedAt,
+                    Title = $"Student added to batch: {s.Name}",
+                    Description = $"{s.BatchName} - {s.Status}",
+                    Status = s.Status.ToString(),
+                    ActionUrl = $"/trainer/students/{s.StudentId}"
+                }));
+
+                timeline.AddRange(upcomingBatches.Select(b => new TrainerTimelineItemDto
+                {
+                    EventType = "batch",
+                    Timestamp = b.StartDate,
+                    Title = $"Batch starts soon: {b.BatchName}",
+                    Description = b.CourseName != null
+                        ? $"{b.CourseName} starts in {Math.Max(0, (int)(b.StartDate.Date - today).TotalDays)} day(s)"
+                        : $"Starts in {Math.Max(0, (int)(b.StartDate.Date - today).TotalDays)} day(s)",
+                    Status = "Upcoming",
+                    ActionUrl = $"/trainer/batches/{b.BatchId}"
+                }));
+
+                var orderedTimeline = timeline
+                    .OrderByDescending(t => t.Timestamp)
+                    .Take(safeLimit)
+                    .ToList();
+
+                return ResponseHelper.Success(orderedTimeline);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting trainer timeline for user {UserId} role {Role}", userId, role);
+                return ResponseHelper.Error<List<TrainerTimelineItemDto>>($"An error occurred: {ex.Message}");
+            }
+        }
+
         public async Task<ApiResponse<AdminDashboardOverviewDto>> GetAdminOverviewAsync()
         {
             try

@@ -123,6 +123,104 @@ namespace JWTAuthAPI.Controllers
         }
 
         /// <summary>
+        /// Get trainer dashboard overview scoped to trainer-assigned batches.
+        /// </summary>
+        [HttpGet("trainer/overview")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        public async Task<ActionResult<ApiResponse<TrainerDashboardOverviewDto>>> GetTrainerOverview([FromQuery] int limit = 5)
+        {
+            try
+            {
+                if (limit < 1 || limit > 20)
+                {
+                    return BadRequest(ResponseHelper.Error<TrainerDashboardOverviewDto>("Limit must be between 1 and 20", 400));
+                }
+
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(ResponseHelper.Error<TrainerDashboardOverviewDto>("User ID not found in token", 401));
+                }
+
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.GetTrainerOverviewAsync(userId, role, limit);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetTrainerOverview endpoint");
+                return StatusCode(500, ResponseHelper.Error<TrainerDashboardOverviewDto>("An error occurred while fetching trainer dashboard data", 500));
+            }
+        }
+
+        /// <summary>
+        /// Get quick-action counts for trainer dashboard cards.
+        /// </summary>
+        [HttpGet("trainer/quick-actions")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        public async Task<ActionResult<ApiResponse<TrainerQuickActionsDto>>> GetTrainerQuickActions()
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(ResponseHelper.Error<TrainerQuickActionsDto>("User ID not found in token", 401));
+                }
+
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.GetTrainerQuickActionsAsync(userId, role);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetTrainerQuickActions endpoint");
+                return StatusCode(500, ResponseHelper.Error<TrainerQuickActionsDto>("An error occurred while fetching trainer quick actions", 500));
+            }
+        }
+
+        /// <summary>
+        /// Get recent trainer timeline events based on assigned batches.
+        /// </summary>
+        /// <param name="limit">Maximum number of events (default: 20, max: 100)</param>
+        [HttpGet("trainer/timeline")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        public async Task<ActionResult<ApiResponse<List<TrainerTimelineItemDto>>>> GetTrainerTimeline([FromQuery] int limit = 20)
+        {
+            try
+            {
+                if (limit < 1 || limit > 100)
+                {
+                    return BadRequest(ResponseHelper.Error<List<TrainerTimelineItemDto>>("Limit must be between 1 and 100", 400));
+                }
+
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(ResponseHelper.Error<List<TrainerTimelineItemDto>>("User ID not found in token", 401));
+                }
+
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.GetTrainerTimelineAsync(userId, role, limit);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetTrainerTimeline endpoint");
+                return StatusCode(500, ResponseHelper.Error<List<TrainerTimelineItemDto>>("An error occurred while fetching trainer timeline", 500));
+            }
+        }
+
+        /// <summary>
         /// Get admin dashboard overview with statistics on students, courses, batches, staff, and inquiries
         /// </summary>
         [HttpGet("overview")]
