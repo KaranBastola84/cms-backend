@@ -185,7 +185,7 @@ namespace JWTAuthAPI.Controllers
         /// </summary>
         /// <param name="limit">Maximum number of notifications to return (default: 50, max: 100)</param>
         [HttpGet("notifications")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<ActionResult<ApiResponse<NotificationResponseDto>>> GetNotifications([FromQuery] int limit = 50)
         {
             try
@@ -216,7 +216,7 @@ namespace JWTAuthAPI.Controllers
         /// </summary>
         /// <param name="request">Request containing the notification key to mark as read</param>
         [HttpPost("notifications/mark-read")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<ActionResult<ApiResponse<bool>>> MarkNotificationAsRead([FromBody] MarkNotificationReadDto request)
         {
             try
@@ -246,7 +246,7 @@ namespace JWTAuthAPI.Controllers
         /// Mark all notifications as read for the current user
         /// </summary>
         [HttpPost("notifications/mark-all-read")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<ActionResult<ApiResponse<bool>>> MarkAllNotificationsAsRead()
         {
             try

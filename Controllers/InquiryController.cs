@@ -69,7 +69,7 @@ namespace JWTAuthAPI.Controllers
 
         // GET: api/inquiry (Admin/Staff only - View all inquiries)
         [HttpGet]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> GetAllInquiries(
             [FromQuery] InquiryStatus? status = null,
             [FromQuery] int? assignedToId = null,
@@ -142,7 +142,7 @@ namespace JWTAuthAPI.Controllers
 
         // GET: api/inquiry/{id} (Admin/Staff only)
         [HttpGet("{id}")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> GetInquiryById(int id)
         {
             var inquiry = await _context.Inquiries
@@ -185,7 +185,7 @@ namespace JWTAuthAPI.Controllers
 
         // PUT: api/inquiry/{id}/status (Admin/Staff only - Update inquiry status)
         [HttpPut("{id}/status")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> UpdateInquiryStatus(
             int id,
             [FromBody] UpdateInquiryStatusDto updateDto)
@@ -237,7 +237,7 @@ namespace JWTAuthAPI.Controllers
 
         // PUT: api/inquiry/{id}/assign (Admin/Staff only - Assign inquiry to staff)
         [HttpPut("{id}/assign")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> AssignInquiry(int id, [FromBody] AssignInquiryDto assignDto)
         {
             var inquiry = await _context.Inquiries.FindAsync(id);
@@ -259,9 +259,9 @@ namespace JWTAuthAPI.Controllers
                 return BadRequest(ResponseHelper.Error<object>("Cannot assign to inactive user"));
             }
 
-            if (assignedUser.Role != Roles.Admin && assignedUser.Role != Roles.Staff)
+            if (assignedUser.Role != Roles.Admin && assignedUser.Role != Roles.Staff && assignedUser.Role != Roles.Trainer)
             {
-                return BadRequest(ResponseHelper.Error<object>("Can only assign to Admin or Staff users"));
+                return BadRequest(ResponseHelper.Error<object>("Can only assign to Admin, Staff, or Trainer users"));
             }
 
             var oldAssignedId = inquiry.AssignedToId;
@@ -304,7 +304,7 @@ namespace JWTAuthAPI.Controllers
 
         // POST: api/inquiry/{id}/followup (Admin/Staff only - Add follow-up note)
         [HttpPost("{id}/followup")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> AddFollowUpNote(int id, [FromBody] AddFollowUpNoteDto noteDto)
         {
             var inquiry = await _context.Inquiries.FindAsync(id);
@@ -365,7 +365,7 @@ namespace JWTAuthAPI.Controllers
 
         // GET: api/inquiry/{id}/followup (Admin/Staff only - Get all follow-up notes)
         [HttpGet("{id}/followup")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> GetFollowUpNotes(int id)
         {
             var inquiryExists = await _context.Inquiries.AnyAsync(i => i.Id == id);
@@ -399,7 +399,7 @@ namespace JWTAuthAPI.Controllers
 
         // GET: api/inquiry/analytics (Admin/Staff only - Get inquiry analytics)
         [HttpGet("analytics")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> GetInquiryAnalytics()
         {
             var totalInquiries = await _context.Inquiries.CountAsync();

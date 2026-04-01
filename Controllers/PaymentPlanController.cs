@@ -19,7 +19,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> CreatePaymentPlan([FromBody] CreatePaymentPlanDto dto)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -42,7 +42,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpGet("course/{courseId}")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> GetPaymentPlansByCourse(int courseId)
         {
             var result = await _paymentPlanService.GetPaymentPlansByCourseIdAsync(courseId);
@@ -50,7 +50,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPut("{id}/status")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> UpdatePaymentPlanStatus(int id, [FromBody] UpdatePaymentPlanStatusDto dto)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -74,7 +74,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpGet("installments/overdue")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> GetOverdueInstallments([FromQuery] int? days)
         {
             var result = await _paymentPlanService.GetOverdueInstallmentsAsync(days);
@@ -82,7 +82,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpGet("installments/upcoming")]
-        [Authorize(Roles = "Admin,Staff")]
+        [Authorize(Roles = "Admin,Staff,Trainer")]
         public async Task<IActionResult> GetUpcomingInstallments([FromQuery] int days = 7)
         {
             var result = await _paymentPlanService.GetUpcomingInstallmentsAsync(days);

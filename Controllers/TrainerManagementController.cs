@@ -10,7 +10,7 @@ namespace JWTAuthAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = Roles.Admin)] // All endpoints require Admin role
+    [Authorize]
     public class TrainerManagementController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
@@ -31,6 +31,7 @@ namespace JWTAuthAPI.Controllers
         /// Admin creates a new trainer account and sends OTP to trainer email
         /// </summary>
         [HttpPost("create")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<IActionResult> CreateTrainer(CreateTrainerDto dto)
         {
             // Check if email already exists
@@ -171,6 +172,7 @@ namespace JWTAuthAPI.Controllers
         /// Admin activates a trainer account
         /// </summary>
         [HttpPut("{id}/activate")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<IActionResult> ActivateTrainer(int id)
         {
             var trainer = await _context.ApplicationUsers
@@ -243,6 +245,7 @@ namespace JWTAuthAPI.Controllers
         /// Admin deactivates a trainer account
         /// </summary>
         [HttpPut("{id}/deactivate")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<IActionResult> DeactivateTrainer(int id)
         {
             var trainer = await _context.ApplicationUsers
@@ -285,6 +288,7 @@ namespace JWTAuthAPI.Controllers
         /// Admin gets list of all trainers
         /// </summary>
         [HttpGet]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> GetAllTrainers()
         {
             var trainerList = await _context.ApplicationUsers
@@ -311,6 +315,7 @@ namespace JWTAuthAPI.Controllers
         /// Admin gets details of a specific trainer
         /// </summary>
         [HttpGet("{id}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> GetTrainerById(int id)
         {
             var trainer = await _context.ApplicationUsers
@@ -342,6 +347,7 @@ namespace JWTAuthAPI.Controllers
         /// Admin resends OTP to trainer email
         /// </summary>
         [HttpPost("{id}/resend-otp")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<IActionResult> ResendOTP(int id)
         {
             var trainer = await _context.ApplicationUsers
@@ -404,6 +410,7 @@ namespace JWTAuthAPI.Controllers
         /// Admin deletes a trainer account
         /// </summary>
         [HttpDelete("{id}")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<IActionResult> DeleteTrainer(int id)
         {
             var trainer = await _context.ApplicationUsers

@@ -22,10 +22,20 @@ namespace JWTAuthAPI.Controllers
 
         // Admin only
         [HttpGet("users")]
-        [Authorize(Roles = Roles.Admin)]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> GetAllUsers()
         {
-            var users = await _context.ApplicationUsers
+            var isAdmin = User.IsInRole(Roles.Admin);
+
+            var query = _context.ApplicationUsers.AsQueryable();
+            if (!isAdmin)
+            {
+                // Non-admins only need assignable active users for operational pages like inquiries.
+                query = query.Where(u => u.IsActive &&
+                    (u.Role == Roles.Admin || u.Role == Roles.Staff || u.Role == Roles.Trainer));
+            }
+
+            var users = await query
                 .Select(u => new
                 {
                     u.Id,

@@ -22,7 +22,7 @@ namespace JWTAuthAPI.Controllers
         /// Mark attendance for a single student
         /// </summary>
         [HttpPost]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> MarkAttendance([FromBody] MarkAttendanceDto dto)
         {
             if (!ModelState.IsValid)
@@ -45,7 +45,7 @@ namespace JWTAuthAPI.Controllers
         /// Mark attendance for multiple students at once
         /// </summary>
         [HttpPost("bulk")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> MarkBulkAttendance([FromBody] BulkAttendanceDto dto)
         {
             if (!ModelState.IsValid)
@@ -128,7 +128,7 @@ namespace JWTAuthAPI.Controllers
         /// Update an existing attendance record
         /// </summary>
         [HttpPut("{id}")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> UpdateAttendance(int id, [FromBody] UpdateAttendanceDto dto)
         {
             if (!ModelState.IsValid)

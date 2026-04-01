@@ -55,11 +55,26 @@ namespace JWTAuthAPI.Models
         {
             [Roles.Staff] = new()
             {
-                Dashboard, ViewStudents, ManageStudents, Attendance, Inquiries, StudentDocuments
+                Dashboard,
+                ViewStudents,
+                ManageStudents,
+                CoursesBatches,
+                Attendance,
+                Inquiries,
+                PaymentFinance,
+                Reports,
+                StudentDocuments
             },
             [Roles.Trainer] = new()
             {
-                Dashboard, ViewStudents, Attendance, CoursesBatches
+                Dashboard,
+                ViewStudents,
+                ManageStudents,
+                CoursesBatches,
+                Attendance,
+                Inquiries,
+                PaymentFinance,
+                Reports
             },
             [Roles.Student] = new()
             {

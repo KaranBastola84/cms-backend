@@ -19,7 +19,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> CreateBatch([FromBody] CreateBatchDto createDto)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -68,7 +68,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> UpdateBatch(int id, [FromBody] UpdateBatchDto updateDto)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";

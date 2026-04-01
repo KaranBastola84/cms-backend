@@ -27,7 +27,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> CreateStudent([FromBody] CreateStudentDto createDto)
         {
             if (!ModelState.IsValid)
@@ -87,7 +87,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> UpdateStudent(int id, [FromBody] UpdateStudentDto updateDto)
         {
             if (!ModelState.IsValid)
@@ -107,7 +107,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPatch("{id}/status")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> ChangeStudentStatus(int id, [FromBody] JsonElement statusPayload)
         {
             if (!TryParseStatusPayload(statusPayload, out var status))
@@ -188,7 +188,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpGet("{id}/registration-summary")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> GetRegistrationSummary(int id)
         {
             var result = await _studentService.GetRegistrationSummaryAsync(id);
@@ -202,7 +202,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPost("{id}/cash-payment")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> ProcessCashPayment(int id, [FromBody] CashPaymentDto dto)
         {
             if (dto.StudentId != id)
@@ -243,7 +243,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpGet("{id}/documents/{documentId}/download")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> DownloadStudentDocument(int id, int documentId)
         {
             var documentResult = await _fileService.GetDocumentByIdAsync(documentId);
