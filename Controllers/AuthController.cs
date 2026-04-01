@@ -12,6 +12,13 @@ namespace JWTAuthAPI.Controllers
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
     {
+        private static readonly Dictionary<string, List<string>> FrontendAliasesByCanonicalPermission = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [Permissions.CoursesBatches] = new() { "view-courses", "course-management", "batch-schedule", "view-classes", "view-schedule" },
+            [Permissions.Inquiries] = new() { "view-inquiries" },
+            [Permissions.ManageStudents] = new() { "student-registration" }
+        };
+
         private readonly ApplicationDbContext _context;
         private readonly JwtService _jwtService;
         private readonly Services.IAuditService _auditService;
@@ -140,6 +147,8 @@ namespace JWTAuthAPI.Controllers
                 ? userOverrides.Result!.EffectivePermissions
                 : permissions;
 
+            var frontendPermissions = ExpandPermissionsForFrontend(effectivePermissions);
+
             return Ok(new ApiResponse<object>
             {
                 StatusCode = 200,
@@ -154,7 +163,7 @@ namespace JWTAuthAPI.Controllers
                         role = user.Role,
                         username = user.Username,
                         email = user.Email,
-                        permissions = effectivePermissions
+                        permissions = frontendPermissions
                     }
                 }
             });
@@ -319,6 +328,14 @@ namespace JWTAuthAPI.Controllers
             var newAccessToken = _jwtService.GenerateAccessToken(user);
             var newRefreshToken = _jwtService.GenerateRefreshToken(user);
 
+            var rolePermissions = await _permissionService.GetRolePermissionsAsync(user.Role);
+            var userOverrides = await _permissionService.GetUserPermissionsAsync(user.Id);
+            var effectivePermissions = userOverrides.IsSuccess
+                ? userOverrides.Result!.EffectivePermissions
+                : rolePermissions;
+
+            var frontendPermissions = ExpandPermissionsForFrontend(effectivePermissions);
+
             // Update refresh token in database
             user.RefreshToken = newRefreshToken;
             user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
@@ -333,9 +350,36 @@ namespace JWTAuthAPI.Controllers
                 {
                     access = newAccessToken,
                     refresh = newRefreshToken,
-                    user = new { role = user.Role, username = user.Username }
+                    user = new
+                    {
+                        id = user.Id,
+                        role = user.Role,
+                        username = user.Username,
+                        email = user.Email,
+                        permissions = frontendPermissions
+                    }
                 }
             });
+        }
+
+        private static List<string> ExpandPermissionsForFrontend(IEnumerable<string> permissions)
+        {
+            var expanded = new HashSet<string>(permissions, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var permission in permissions)
+            {
+                if (!FrontendAliasesByCanonicalPermission.TryGetValue(permission, out var aliases))
+                {
+                    continue;
+                }
+
+                foreach (var alias in aliases)
+                {
+                    expanded.Add(alias);
+                }
+            }
+
+            return expanded.OrderBy(x => x).ToList();
         }
 
         [HttpPost("logout")]

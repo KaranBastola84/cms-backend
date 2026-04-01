@@ -9,7 +9,7 @@ namespace JWTAuthAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Admin")]
+    [Authorize]
     public class DashboardController : ControllerBase
     {
         private readonly IDashboardService _dashboardService;
@@ -27,6 +27,7 @@ namespace JWTAuthAPI.Controllers
         /// Get admin dashboard overview with statistics on students, courses, batches, staff, and inquiries
         /// </summary>
         [HttpGet("overview")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<ActionResult<ApiResponse<AdminDashboardOverviewDto>>> GetOverview()
         {
             try
@@ -45,6 +46,7 @@ namespace JWTAuthAPI.Controllers
         /// Get financial summary including revenue, outstanding amounts, collection metrics, and upcoming payments
         /// </summary>
         [HttpGet("financial")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<ActionResult<ApiResponse<AdminFinancialSummaryDto>>> GetFinancialSummary()
         {
             try
@@ -64,6 +66,7 @@ namespace JWTAuthAPI.Controllers
         /// </summary>
         /// <param name="limit">Number of records to return per category (default: 10)</param>
         [HttpGet("activities")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<ActionResult<ApiResponse<AdminRecentActivitiesDto>>> GetRecentActivities([FromQuery] int limit = 10)
         {
             try
@@ -87,6 +90,7 @@ namespace JWTAuthAPI.Controllers
         /// Get system alerts including payment, attendance, inquiry, and batch alerts
         /// </summary>
         [HttpGet("alerts")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<ActionResult<ApiResponse<AdminAlertsDto>>> GetAlerts()
         {
             try
@@ -106,6 +110,7 @@ namespace JWTAuthAPI.Controllers
         /// </summary>
         /// <param name="months">Number of months to include in historical data (default: 6)</param>
         [HttpGet("charts")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<ActionResult<ApiResponse<AdminChartsDto>>> GetChartsData([FromQuery] int months = 6)
         {
             try
@@ -129,6 +134,7 @@ namespace JWTAuthAPI.Controllers
         /// Get attendance analytics including today's attendance, weekly/monthly rates, and batch-wise breakdown
         /// </summary>
         [HttpGet("attendance")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<ActionResult<ApiResponse<AdminAttendanceAnalyticsDto>>> GetAttendanceAnalytics()
         {
             try
@@ -149,6 +155,7 @@ namespace JWTAuthAPI.Controllers
         /// <param name="q">Search text</param>
         /// <param name="limit">Maximum number of results (default: 15, max: 25)</param>
         [HttpGet("search")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<ActionResult<ApiResponse<AdminGlobalSearchDto>>> Search([FromQuery] string q, [FromQuery] int limit = 15)
         {
             try
@@ -178,6 +185,7 @@ namespace JWTAuthAPI.Controllers
         /// </summary>
         /// <param name="limit">Maximum number of notifications to return (default: 50, max: 100)</param>
         [HttpGet("notifications")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
         public async Task<ActionResult<ApiResponse<NotificationResponseDto>>> GetNotifications([FromQuery] int limit = 50)
         {
             try
@@ -208,6 +216,7 @@ namespace JWTAuthAPI.Controllers
         /// </summary>
         /// <param name="request">Request containing the notification key to mark as read</param>
         [HttpPost("notifications/mark-read")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
         public async Task<ActionResult<ApiResponse<bool>>> MarkNotificationAsRead([FromBody] MarkNotificationReadDto request)
         {
             try
@@ -237,6 +246,7 @@ namespace JWTAuthAPI.Controllers
         /// Mark all notifications as read for the current user
         /// </summary>
         [HttpPost("notifications/mark-all-read")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
         public async Task<ActionResult<ApiResponse<bool>>> MarkAllNotificationsAsRead()
         {
             try
