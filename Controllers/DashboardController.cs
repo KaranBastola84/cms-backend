@@ -155,7 +155,7 @@ namespace JWTAuthAPI.Controllers
         /// <param name="q">Search text</param>
         /// <param name="limit">Maximum number of results (default: 15, max: 25)</param>
         [HttpGet("search")]
-        [Authorize(Roles = Roles.Admin)]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<ActionResult<ApiResponse<AdminGlobalSearchDto>>> Search([FromQuery] string q, [FromQuery] int limit = 15)
         {
             try
