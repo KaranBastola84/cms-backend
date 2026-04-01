@@ -221,6 +221,104 @@ namespace JWTAuthAPI.Controllers
         }
 
         /// <summary>
+        /// Get student dashboard overview scoped to the logged-in student.
+        /// </summary>
+        [HttpGet("student/overview")]
+        [Authorize(Roles = $"{Roles.Student},{Roles.EnrolledStudent}")]
+        public async Task<ActionResult<ApiResponse<StudentDashboardOverviewDto>>> GetStudentOverview([FromQuery] int limit = 5)
+        {
+            try
+            {
+                if (limit < 1 || limit > 20)
+                {
+                    return BadRequest(ResponseHelper.Error<StudentDashboardOverviewDto>("Limit must be between 1 and 20", 400));
+                }
+
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int studentId))
+                {
+                    return Unauthorized(ResponseHelper.Error<StudentDashboardOverviewDto>("Student ID not found in token", 401));
+                }
+
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.GetStudentOverviewAsync(studentId, role, limit);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetStudentOverview endpoint");
+                return StatusCode(500, ResponseHelper.Error<StudentDashboardOverviewDto>("An error occurred while fetching student dashboard data", 500));
+            }
+        }
+
+        /// <summary>
+        /// Get quick-action counts for student dashboard cards.
+        /// </summary>
+        [HttpGet("student/quick-actions")]
+        [Authorize(Roles = $"{Roles.Student},{Roles.EnrolledStudent}")]
+        public async Task<ActionResult<ApiResponse<StudentQuickActionsDto>>> GetStudentQuickActions()
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int studentId))
+                {
+                    return Unauthorized(ResponseHelper.Error<StudentQuickActionsDto>("Student ID not found in token", 401));
+                }
+
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.GetStudentQuickActionsAsync(studentId, role);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetStudentQuickActions endpoint");
+                return StatusCode(500, ResponseHelper.Error<StudentQuickActionsDto>("An error occurred while fetching student quick actions", 500));
+            }
+        }
+
+        /// <summary>
+        /// Get recent student timeline events.
+        /// </summary>
+        /// <param name="limit">Maximum number of events (default: 20, max: 100)</param>
+        [HttpGet("student/timeline")]
+        [Authorize(Roles = $"{Roles.Student},{Roles.EnrolledStudent}")]
+        public async Task<ActionResult<ApiResponse<List<StudentTimelineItemDto>>>> GetStudentTimeline([FromQuery] int limit = 20)
+        {
+            try
+            {
+                if (limit < 1 || limit > 100)
+                {
+                    return BadRequest(ResponseHelper.Error<List<StudentTimelineItemDto>>("Limit must be between 1 and 100", 400));
+                }
+
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int studentId))
+                {
+                    return Unauthorized(ResponseHelper.Error<List<StudentTimelineItemDto>>("Student ID not found in token", 401));
+                }
+
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.GetStudentTimelineAsync(studentId, role, limit);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in GetStudentTimeline endpoint");
+                return StatusCode(500, ResponseHelper.Error<List<StudentTimelineItemDto>>("An error occurred while fetching student timeline", 500));
+            }
+        }
+
+        /// <summary>
         /// Get admin dashboard overview with statistics on students, courses, batches, staff, and inquiries
         /// </summary>
         [HttpGet("overview")]
@@ -352,7 +450,7 @@ namespace JWTAuthAPI.Controllers
         /// <param name="q">Search text</param>
         /// <param name="limit">Maximum number of results (default: 15, max: 25)</param>
         [HttpGet("search")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer},{Roles.Student},{Roles.EnrolledStudent}")]
         public async Task<ActionResult<ApiResponse<AdminGlobalSearchDto>>> Search([FromQuery] string q, [FromQuery] int limit = 15)
         {
             try
@@ -367,7 +465,23 @@ namespace JWTAuthAPI.Controllers
                     return BadRequest(ResponseHelper.Error<AdminGlobalSearchDto>("Limit must be between 1 and 25", 400));
                 }
 
-                var result = await _dashboardService.SearchAsync(q, limit);
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(ResponseHelper.Error<AdminGlobalSearchDto>("User ID not found in token", 401));
+                }
+
+                var isStudentRole = role.Equals(Roles.Student, StringComparison.OrdinalIgnoreCase)
+                                    || role.Equals(Roles.EnrolledStudent, StringComparison.OrdinalIgnoreCase);
+
+                var result = isStudentRole
+                    ? await _dashboardService.SearchStudentAsync(userId, q, limit)
+                    : await _dashboardService.SearchAsync(q, limit);
+
                 return Ok(result);
             }
             catch (Exception ex)
@@ -382,7 +496,7 @@ namespace JWTAuthAPI.Controllers
         /// </summary>
         /// <param name="limit">Maximum number of notifications to return (default: 50, max: 100)</param>
         [HttpGet("notifications")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer},{Roles.Student},{Roles.EnrolledStudent}")]
         public async Task<ActionResult<ApiResponse<NotificationResponseDto>>> GetNotifications([FromQuery] int limit = 50)
         {
             try
@@ -398,7 +512,11 @@ namespace JWTAuthAPI.Controllers
                     return Unauthorized(ResponseHelper.Error<NotificationResponseDto>("User ID not found in token", 401));
                 }
 
-                var result = await _dashboardService.GetNotificationsAsync(userId, limit);
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.GetNotificationsAsync(userId, limit, role);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -413,7 +531,7 @@ namespace JWTAuthAPI.Controllers
         /// </summary>
         /// <param name="request">Request containing the notification key to mark as read</param>
         [HttpPost("notifications/mark-read")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer},{Roles.Student},{Roles.EnrolledStudent}")]
         public async Task<ActionResult<ApiResponse<bool>>> MarkNotificationAsRead([FromBody] MarkNotificationReadDto request)
         {
             try
@@ -429,7 +547,11 @@ namespace JWTAuthAPI.Controllers
                     return Unauthorized(ResponseHelper.Error<bool>("User ID not found in token", 401));
                 }
 
-                var result = await _dashboardService.MarkNotificationAsReadAsync(userId, request.NotificationKey);
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.MarkNotificationAsReadAsync(userId, request.NotificationKey, role);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -443,7 +565,7 @@ namespace JWTAuthAPI.Controllers
         /// Mark all notifications as read for the current user
         /// </summary>
         [HttpPost("notifications/mark-all-read")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer},{Roles.Student},{Roles.EnrolledStudent}")]
         public async Task<ActionResult<ApiResponse<bool>>> MarkAllNotificationsAsRead()
         {
             try
@@ -454,7 +576,11 @@ namespace JWTAuthAPI.Controllers
                     return Unauthorized(ResponseHelper.Error<bool>("User ID not found in token", 401));
                 }
 
-                var result = await _dashboardService.MarkAllNotificationsAsReadAsync(userId);
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value
+                           ?? string.Empty;
+
+                var result = await _dashboardService.MarkAllNotificationsAsReadAsync(userId, role);
                 return Ok(result);
             }
             catch (Exception ex)
