@@ -31,6 +31,9 @@ namespace JWTAuthAPI.Models
         // Reports
         public const string Reports = "reports";
 
+        // Certificates
+        public const string Certificates = "certificates";
+
         /// <summary>
         /// Full master list with labels and grouping — returned by GET /api/permissions
         /// </summary>
@@ -45,6 +48,7 @@ namespace JWTAuthAPI.Models
             new("payment-finance", "Payments & Finance", "Finance"),
             new("student-documents", "Student Documents", "Student Management"),
             new("reports", "Reports", "Finance"),
+            new("certificates", "Certificates", "Academic"),
         };
 
         /// <summary>
@@ -74,11 +78,13 @@ namespace JWTAuthAPI.Models
                 Attendance,
                 Inquiries,
                 PaymentFinance,
-                Reports
+                Reports,
+                Certificates
             },
             [Roles.Student] = new()
             {
-                Dashboard
+                Dashboard,
+                Certificates
             }
         };
     }

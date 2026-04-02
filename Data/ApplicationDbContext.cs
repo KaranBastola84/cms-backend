@@ -38,6 +38,7 @@ namespace JWTAuthAPI.Data
         public DbSet<ProductReview> ProductReviews { get; set; } // DbSet for Product Reviews
         public DbSet<RolePermission> RolePermissions { get; set; } // DbSet for Role Permissions
         public DbSet<UserPermission> UserPermissions { get; set; } // DbSet for User Permission Overrides
+        public DbSet<Certificate> Certificates { get; set; } // DbSet for Certificate workflow
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -251,6 +252,27 @@ namespace JWTAuthAPI.Data
 
             modelBuilder.Entity<ProductCategory>()
                 .HasIndex(pc => pc.DisplayOrder);
+
+            // Configure Certificate indexes
+            modelBuilder.Entity<Certificate>()
+                .HasIndex(c => c.CertificateNumber)
+                .IsUnique();
+
+            modelBuilder.Entity<Certificate>()
+                .HasIndex(c => c.VerificationToken)
+                .IsUnique();
+
+            modelBuilder.Entity<Certificate>()
+                .HasIndex(c => c.StudentId);
+
+            modelBuilder.Entity<Certificate>()
+                .HasIndex(c => c.Status);
+
+            modelBuilder.Entity<Certificate>()
+                .HasOne(c => c.Student)
+                .WithMany()
+                .HasForeignKey(c => c.StudentId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }
