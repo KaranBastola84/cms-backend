@@ -72,11 +72,31 @@ namespace cms_backend.Migrations
                 table: "Certificates",
                 column: "VerificationToken",
                 unique: true);
+
+            migrationBuilder.Sql(
+                "INSERT INTO \"RolePermissions\" (\"Role\", \"PermissionKey\") " +
+                "SELECT 'Trainer', 'certificates' " +
+                "WHERE NOT EXISTS (" +
+                "SELECT 1 FROM \"RolePermissions\" WHERE \"Role\" = 'Trainer' AND \"PermissionKey\" = 'certificates');");
+
+            migrationBuilder.Sql(
+                "INSERT INTO \"RolePermissions\" (\"Role\", \"PermissionKey\") " +
+                "SELECT 'Student', 'certificates' " +
+                "WHERE NOT EXISTS (" +
+                "SELECT 1 FROM \"RolePermissions\" WHERE \"Role\" = 'Student' AND \"PermissionKey\" = 'certificates');");
+
+            migrationBuilder.Sql(
+                "INSERT INTO \"RolePermissions\" (\"Role\", \"PermissionKey\") " +
+                "SELECT 'EnrolledStudent', 'certificates' " +
+                "WHERE NOT EXISTS (" +
+                "SELECT 1 FROM \"RolePermissions\" WHERE \"Role\" = 'EnrolledStudent' AND \"PermissionKey\" = 'certificates');");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("DELETE FROM \"RolePermissions\" WHERE \"Role\" IN ('Trainer', 'Student', 'EnrolledStudent') AND \"PermissionKey\" = 'certificates';");
+
             migrationBuilder.DropTable(
                 name: "Certificates");
         }
