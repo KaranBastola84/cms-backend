@@ -11,7 +11,6 @@ namespace JWTAuthAPI.Services
         private readonly IAuditService _auditService;
         private readonly ILogger<FileService> _logger;
         private readonly IWebHostEnvironment _environment;
-        private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly string _uploadsFolder;
 
         // Allowed file extensions and max size
@@ -23,14 +22,12 @@ namespace JWTAuthAPI.Services
             ApplicationDbContext context,
             IAuditService auditService,
             ILogger<FileService> logger,
-            IWebHostEnvironment environment,
-            IHttpContextAccessor httpContextAccessor)
+            IWebHostEnvironment environment)
         {
             _context = context;
             _auditService = auditService;
             _logger = logger;
             _environment = environment;
-            _httpContextAccessor = httpContextAccessor;
             _uploadsFolder = Path.Combine(_environment.ContentRootPath, "Uploads", "StudentDocuments");
 
             // Ensure uploads directory exists
@@ -116,6 +113,7 @@ namespace JWTAuthAPI.Services
             try
             {
                 var documents = await _context.StudentDocuments
+                    .AsNoTracking()
                     .Where(d => d.StudentId == studentId)
                     .OrderByDescending(d => d.UploadedAt)
                     .ToListAsync();
@@ -134,7 +132,9 @@ namespace JWTAuthAPI.Services
         {
             try
             {
-                var document = await _context.StudentDocuments.FindAsync(documentId);
+                var document = await _context.StudentDocuments
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(d => d.DocumentId == documentId);
 
                 if (document == null)
                 {
@@ -155,7 +155,9 @@ namespace JWTAuthAPI.Services
         {
             try
             {
-                var document = await _context.StudentDocuments.FindAsync(documentId);
+                var document = await _context.StudentDocuments
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(d => d.DocumentId == documentId);
 
                 if (document == null)
                 {
@@ -223,6 +225,7 @@ namespace JWTAuthAPI.Services
             try
             {
                 var documents = await _context.StudentDocuments
+                    .AsNoTracking()
                     .Where(d => d.StudentId == studentId && d.DocumentType == documentType)
                     .OrderByDescending(d => d.UploadedAt)
                     .ToListAsync();
@@ -290,9 +293,6 @@ namespace JWTAuthAPI.Services
 
         private StudentDocumentDto MapToDto(StudentDocument document)
         {
-            var baseUrl = $"/api/StudentDocument/{document.DocumentId}/download";
-            var downloadUrl = BuildDownloadUrlWithToken(baseUrl);
-
             return new StudentDocumentDto
             {
                 DocumentId = document.DocumentId,
@@ -303,26 +303,8 @@ namespace JWTAuthAPI.Services
                 ContentType = document.ContentType,
                 UploadedAt = document.UploadedAt,
                 Description = document.Description,
-                DownloadUrl = downloadUrl
+                DownloadUrl = $"/api/StudentDocument/{document.DocumentId}/download"
             };
-        }
-
-        private string BuildDownloadUrlWithToken(string baseUrl)
-        {
-            var authHeader = _httpContextAccessor.HttpContext?.Request.Headers.Authorization.ToString();
-
-            if (string.IsNullOrWhiteSpace(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            {
-                return baseUrl;
-            }
-
-            var token = authHeader.Substring("Bearer ".Length).Trim();
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                return baseUrl;
-            }
-
-            return $"{baseUrl}?accessToken={Uri.EscapeDataString(token)}";
         }
     }
 }

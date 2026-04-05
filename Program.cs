@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using JWTAuthAPI.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
@@ -43,6 +44,13 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
     }); // Add support for controllers with string enum serialization
 builder.Services.AddEndpointsApiExplorer(); // Add support for API endpoint exploration
+builder.Services.AddHealthChecks();
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 2;
+});
 
 // Configure rate limiting to prevent abuse
 builder.Services.AddMemoryCache();
@@ -93,19 +101,37 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))); // Configure the database context with PostgreSQL
 
-var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("JWT Key is not configured");
+string? GetJwtSetting(string setting)
+{
+    return builder.Configuration[$"Jwt:{setting}"] ?? builder.Configuration[$"JWT:{setting}"];
+}
+
+var jwtKey = GetJwtSetting("Key") ?? throw new InvalidOperationException("JWT Key is not configured");
+var jwtIssuer = GetJwtSetting("Issuer");
+var jwtAudience = GetJwtSetting("Audience");
+
+if (builder.Environment.IsProduction() && (string.IsNullOrWhiteSpace(jwtIssuer) || string.IsNullOrWhiteSpace(jwtAudience)))
+{
+    throw new InvalidOperationException("Jwt:Issuer and Jwt:Audience must be configured in production.");
+}
+
 var key = Encoding.UTF8.GetBytes(jwtKey);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        var validateIssuer = !string.IsNullOrWhiteSpace(jwtIssuer);
+        var validateAudience = !string.IsNullOrWhiteSpace(jwtAudience);
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = false,
-            ValidateAudience = false,
+            ValidateIssuer = validateIssuer,
+            ValidateAudience = validateAudience,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(key),
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
             ClockSkew = TimeSpan.FromMinutes(5) // Allow 5 minute clock skew
         };
     });
@@ -138,12 +164,34 @@ builder.Services.AddHttpContextAccessor(); // Required for AuditService to acces
 var app = builder.Build(); // Build the web application
 
 // Configure the HTTP request pipeline.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler(errorApp =>
+    {
+        errorApp.Run(async context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            context.Response.ContentType = "application/json";
+
+            await context.Response.WriteAsJsonAsync(new
+            {
+                statusCode = 500,
+                isSuccess = false,
+                errorMessage = new[] { "An unexpected error occurred." }
+            });
+        });
+    });
+
+    app.UseHsts();
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
+app.UseForwardedHeaders();
 app.UseHttpsRedirection();
 
 // Add Security Headers
@@ -160,20 +208,21 @@ app.Use(async (context, next) =>
     // Content Security Policy
     context.Response.Headers["Content-Security-Policy"] =
         "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'";
-    // HSTS - Force HTTPS (only in production)
-    if (app.Environment.IsProduction())
-    {
-        context.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
-    }
     await next();
 });
 
-// Enable serving static files from Uploads directory
+// Serve only product images publicly. Student documents are intentionally excluded.
+var publicProductUploadsPath = Path.Combine(app.Environment.ContentRootPath, "Uploads", "Products");
+if (!Directory.Exists(publicProductUploadsPath))
+{
+    Directory.CreateDirectory(publicProductUploadsPath);
+}
+
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
-        Path.Combine(app.Environment.ContentRootPath, "Uploads")),
-    RequestPath = "/Uploads"
+        publicProductUploadsPath),
+    RequestPath = "/Uploads/Products"
 });
 
 // Enable CORS
@@ -186,6 +235,7 @@ app.UseAuthentication(); // add this
 app.UseAuthorization();
 
 app.MapControllers(); // Map controller routes
+app.MapHealthChecks("/health");
 
 // Seed default role permissions on startup
 using (var scope = app.Services.CreateScope())

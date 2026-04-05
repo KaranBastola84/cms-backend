@@ -5,6 +5,7 @@ using JWTAuthAPI.Data;
 using JWTAuthAPI.Models;
 using JWTAuthAPI.Services;
 using JWTAuthAPI.Helpers;
+using System.Security.Cryptography;
 
 namespace JWTAuthAPI.Controllers
 {
@@ -40,7 +41,7 @@ namespace JWTAuthAPI.Controllers
             }
 
             // Generate 6-digit OTP
-            var otp = new Random().Next(100000, 999999).ToString();
+            var otp = GenerateOtp();
             var otpExpiry = DateTime.UtcNow.AddMinutes(15);
 
             // Create staff user with pending status
@@ -74,12 +75,12 @@ namespace JWTAuthAPI.Controllers
                     otp
                 );
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // Rollback user creation if email fails
                 _context.ApplicationUsers.Remove(staff);
                 await _context.SaveChangesAsync();
-                return StatusCode(500, ResponseHelper.Error<object>($"Failed to send OTP email: {ex.Message}", 500));
+                return StatusCode(500, ResponseHelper.Error<object>("Failed to send OTP email", 500));
             }
 
             // Log staff creation
@@ -288,6 +289,7 @@ namespace JWTAuthAPI.Controllers
         public async Task<IActionResult> GetAllStaff()
         {
             var staffList = await _context.ApplicationUsers
+                .AsNoTracking()
                 .Where(u => u.Role == Roles.Staff)
                 .OrderByDescending(u => u.CreatedAt)
                 .Select(u => new StaffListItemDto
@@ -314,6 +316,7 @@ namespace JWTAuthAPI.Controllers
         public async Task<IActionResult> GetStaffById(int id)
         {
             var staff = await _context.ApplicationUsers
+                .AsNoTracking()
                 .Where(u => u.Id == id && u.Role == Roles.Staff)
                 .Select(u => new
                 {
@@ -358,7 +361,7 @@ namespace JWTAuthAPI.Controllers
             }
 
             // Generate new OTP
-            var otp = new Random().Next(100000, 999999).ToString();
+            var otp = GenerateOtp();
             var otpExpiry = DateTime.UtcNow.AddMinutes(15);
 
             staff.OTP = otp;
@@ -376,9 +379,9 @@ namespace JWTAuthAPI.Controllers
                     otp
                 );
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Failed to send OTP email: {ex.Message}", 500));
+                return StatusCode(500, ResponseHelper.Error<object>("Failed to send OTP email", 500));
             }
 
             // Log OTP resend
@@ -467,7 +470,7 @@ namespace JWTAuthAPI.Controllers
             }
 
             // Generate 6-digit OTP
-            var otp = new Random().Next(100000, 999999).ToString();
+            var otp = GenerateOtp();
             var otpExpiry = DateTime.UtcNow.AddMinutes(15);
 
             staff.OTP = otp;
@@ -485,9 +488,9 @@ namespace JWTAuthAPI.Controllers
                     otp
                 );
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Failed to send OTP email: {ex.Message}", 500));
+                return StatusCode(500, ResponseHelper.Error<object>("Failed to send OTP email", 500));
             }
 
             // Log password change request
@@ -569,6 +572,11 @@ namespace JWTAuthAPI.Controllers
             {
                 message = "Password changed successfully"
             }));
+        }
+
+        private static string GenerateOtp()
+        {
+            return RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         }
     }
 }
