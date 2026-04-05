@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using JWTAuthAPI.Data;
+using JWTAuthAPI.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
@@ -242,6 +243,50 @@ using (var scope = app.Services.CreateScope())
 {
     var permissionService = scope.ServiceProvider.GetRequiredService<JWTAuthAPI.Services.IPermissionService>();
     await permissionService.SeedDefaultPermissionsAsync();
+
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Startup");
+
+    var adminExists = await dbContext.ApplicationUsers.AnyAsync(u => u.Role == Roles.Admin);
+    if (!adminExists)
+    {
+        var adminEmail = app.Configuration["BootstrapAdmin:Email"];
+        var adminUsername = app.Configuration["BootstrapAdmin:Username"];
+        var adminPassword = app.Configuration["BootstrapAdmin:Password"];
+
+        if (!string.IsNullOrWhiteSpace(adminEmail) && !string.IsNullOrWhiteSpace(adminPassword))
+        {
+            var finalUsername = string.IsNullOrWhiteSpace(adminUsername) ? adminEmail : adminUsername;
+            var usernameExists = await dbContext.ApplicationUsers.AnyAsync(u => u.Username == finalUsername);
+            var emailExists = await dbContext.ApplicationUsers.AnyAsync(u => u.Email == adminEmail);
+
+            if (!usernameExists && !emailExists)
+            {
+                dbContext.ApplicationUsers.Add(new ApplicationUser
+                {
+                    Username = finalUsername,
+                    Email = adminEmail,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword),
+                    Role = Roles.Admin,
+                    IsActive = true,
+                    IsVerified = true,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                });
+
+                await dbContext.SaveChangesAsync();
+                startupLogger.LogWarning("Bootstrap admin account created for {Email}. Change this password immediately after first login.", adminEmail);
+            }
+            else
+            {
+                startupLogger.LogWarning("Bootstrap admin creation skipped because username or email already exists.");
+            }
+        }
+        else
+        {
+            startupLogger.LogWarning("No admin account exists. Set BootstrapAdmin:Email and BootstrapAdmin:Password for initial provisioning.");
+        }
+    }
 }
 
 app.Run();

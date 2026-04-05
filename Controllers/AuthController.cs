@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using JWTAuthAPI.Data;
 using JWTAuthAPI.Models;
 using JWTAuthAPI.Services;
@@ -444,6 +445,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPost("register-admin")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<IActionResult> RegisterAdmin(RegisterDto registerDto)
         {
             // Check if username already exists
