@@ -11,12 +11,18 @@ namespace JWTAuthAPI.Middleware
         // Configuration: requests per minute for different endpoint types
         private readonly Dictionary<string, int> _rateLimits = new()
         {
-            { "/api/auth/login", 10 },              // 5 login attempts per minute
-            { "/api/order", 100 },                   // 10 orders per minute (public)
-            { "/api/productreview", 100 },           // 100 reviews per minute
-            { "/api/inquiry", 100 },                 // 10 inquiries per minute
-            { "/api/staffmanagement/send-otp", 5 }, // 3 OTP requests per minute
-            { "/api/trainermanagement/send-otp", 5 } // 3 OTP requests per minute
+            { "/api/auth/login", 10 },                               // Login attempts per minute
+            { "/api/order", 100 },                                   // Public order requests per minute
+            { "/api/productreview", 60 },                            // Public review requests per minute
+            { "/api/inquiry", 60 },                                  // Public inquiry requests per minute
+            { "/api/staffmanagement/verify-otp", 15 },               // OTP verification attempts per minute
+            { "/api/trainermanagement/verify-otp", 15 },             // OTP verification attempts per minute
+            { "/api/staffmanagement/resend-otp", 5 },                // OTP resend attempts per minute
+            { "/api/trainermanagement/resend-otp", 5 },              // OTP resend attempts per minute
+            { "/api/staffmanagement/request-password-change", 5 },   // Password change OTP requests
+            { "/api/trainermanagement/request-password-change", 5 }, // Password change OTP requests
+            { "/api/staffmanagement/verify-password-change", 10 },   // Password change verification attempts
+            { "/api/trainermanagement/verify-password-change", 10 }  // Password change verification attempts
         };
 
         private const int DefaultRateLimit = 100; // Default: 100 requests per minute
@@ -112,6 +118,17 @@ namespace JWTAuthAPI.Middleware
 
         private string GetEndpointKey(string path)
         {
+            // Handle dynamic routes that contain IDs in the path.
+            if (path.StartsWith("/api/staffmanagement/") && path.EndsWith("/resend-otp"))
+            {
+                return "/api/staffmanagement/resend-otp";
+            }
+
+            if (path.StartsWith("/api/trainermanagement/") && path.EndsWith("/resend-otp"))
+            {
+                return "/api/trainermanagement/resend-otp";
+            }
+
             // Normalize endpoint path for rate limiting
             foreach (var endpoint in _rateLimits.Keys)
             {

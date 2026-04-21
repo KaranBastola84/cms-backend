@@ -59,11 +59,12 @@ namespace JWTAuthAPI.Controllers
                     return BadRequest(ResponseHelper.Error<object>("One or more products are not available"));
                 }
 
+                var productsById = products.ToDictionary(p => p.Id);
+
                 // Validate stock availability (now with locked rows)
                 foreach (var item in dto.OrderItems)
                 {
-                    var product = products.FirstOrDefault(p => p.Id == item.ProductId);
-                    if (product == null)
+                    if (!productsById.TryGetValue(item.ProductId, out var product))
                     {
                         return BadRequest(ResponseHelper.Error<object>($"Product with ID {item.ProductId} not found"));
                     }
@@ -83,7 +84,11 @@ namespace JWTAuthAPI.Controllers
 
                 foreach (var item in dto.OrderItems)
                 {
-                    var product = products.First(p => p.Id == item.ProductId);
+                    if (!productsById.TryGetValue(item.ProductId, out var product))
+                    {
+                        return BadRequest(ResponseHelper.Error<object>($"Product with ID {item.ProductId} not found"));
+                    }
+
                     var subtotal = product.Price * item.Quantity;
                     totalAmount += subtotal;
 
@@ -181,7 +186,7 @@ namespace JWTAuthAPI.Controllers
                 if (pageSize < 1) pageSize = 20;
                 if (pageSize > 100) pageSize = 100;
 
-                var query = _context.Orders.AsQueryable();
+                var query = _context.Orders.AsNoTracking().AsQueryable();
 
                 // Apply filters
                 if (status.HasValue)
@@ -196,11 +201,12 @@ namespace JWTAuthAPI.Controllers
 
                 if (!string.IsNullOrWhiteSpace(search))
                 {
+                    var searchPattern = $"%{search.Trim()}%";
                     query = query.Where(o =>
-                        o.OrderNumber.Contains(search) ||
-                        o.CustomerName.ToLower().Contains(search.ToLower()) ||
-                        o.CustomerEmail.ToLower().Contains(search.ToLower()) ||
-                        o.CustomerPhone.Contains(search));
+                        EF.Functions.ILike(o.OrderNumber, searchPattern) ||
+                        EF.Functions.ILike(o.CustomerName, searchPattern) ||
+                        EF.Functions.ILike(o.CustomerEmail, searchPattern) ||
+                        EF.Functions.ILike(o.CustomerPhone, searchPattern));
                 }
 
                 var totalCount = await query.CountAsync();
@@ -209,7 +215,6 @@ namespace JWTAuthAPI.Controllers
                     .OrderByDescending(o => o.OrderDate)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
-                    .Include(o => o.OrderItems)
                     .Select(o => new OrderListDto
                     {
                         Id = o.Id,
@@ -239,7 +244,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error retrieving orders: {ex.Message}", 500));
+                _logger.LogError(ex, "Error retrieving orders");
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while retrieving orders", 500));
             }
         }
 
@@ -253,7 +259,7 @@ namespace JWTAuthAPI.Controllers
             try
             {
                 var order = await _context.Orders
-                    .Include(o => o.OrderItems)
+                    .AsNoTracking()
                     .Where(o => o.Id == id)
                     .Select(o => new OrderDto
                     {
@@ -292,7 +298,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error retrieving order: {ex.Message}", 500));
+                _logger.LogError(ex, "Error retrieving order {OrderId}", id);
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while retrieving the order", 500));
             }
         }
 
@@ -488,7 +495,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error updating payment status: {ex.Message}", 500));
+                _logger.LogError(ex, "Error updating payment status for order {OrderId}", id);
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while updating payment status", 500));
             }
         }
 
@@ -502,9 +510,9 @@ namespace JWTAuthAPI.Controllers
             try
             {
                 var orders = await _context.Orders
+                    .AsNoTracking()
                     .Where(o => o.Status == OrderStatus.Pending)
                     .OrderBy(o => o.OrderDate)
-                    .Include(o => o.OrderItems)
                     .Select(o => new OrderListDto
                     {
                         Id = o.Id,
@@ -524,7 +532,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error retrieving pending orders: {ex.Message}", 500));
+                _logger.LogError(ex, "Error retrieving pending orders");
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while retrieving pending orders", 500));
             }
         }
 
@@ -538,9 +547,9 @@ namespace JWTAuthAPI.Controllers
             try
             {
                 var orders = await _context.Orders
-                    .Where(o => o.CustomerEmail.ToLower() == email.ToLower())
+                    .AsNoTracking()
+                    .Where(o => EF.Functions.ILike(o.CustomerEmail, email))
                     .OrderByDescending(o => o.OrderDate)
-                    .Include(o => o.OrderItems)
                     .Select(o => new OrderListDto
                     {
                         Id = o.Id,
@@ -560,7 +569,8 @@ namespace JWTAuthAPI.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ResponseHelper.Error<object>($"Error retrieving customer orders: {ex.Message}", 500));
+                _logger.LogError(ex, "Error retrieving orders for customer email {Email}", email);
+                return StatusCode(500, ResponseHelper.Error<object>("An error occurred while retrieving customer orders", 500));
             }
         }
 

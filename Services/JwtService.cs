@@ -11,15 +11,31 @@ namespace JWTAuthAPI.Services
     public class JwtService
     {
         private readonly IConfiguration _config;
+        private readonly string _jwtKey;
+        private readonly string? _jwtIssuer;
+        private readonly string? _jwtAudience;
+
         public JwtService(IConfiguration config)
         {
             _config = config;
+            _jwtKey = GetJwtSetting("Key") ?? throw new InvalidOperationException("JWT Key is not configured");
+            _jwtIssuer = GetJwtSetting("Issuer");
+            _jwtAudience = GetJwtSetting("Audience");
+        }
+
+        private string? GetJwtSetting(string setting)
+        {
+            return _config[$"Jwt:{setting}"] ?? _config[$"JWT:{setting}"];
+        }
+
+        private SymmetricSecurityKey GetSigningKey()
+        {
+            return new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtKey));
         }
 
         public string GenerateAccessToken(ApplicationUser user)
         {
-            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
-            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+            var credentials = new SigningCredentials(GetSigningKey(), SecurityAlgorithms.HmacSha256);
 
             var claims = new[]
             {
@@ -31,8 +47,8 @@ namespace JWTAuthAPI.Services
             };
 
             var token = new JwtSecurityToken(
-                issuer: _config["Jwt:Issuer"],
-                audience: _config["Jwt:Audience"],
+                issuer: _jwtIssuer,
+                audience: _jwtAudience,
                 claims: claims,
                 notBefore: DateTime.UtcNow,
                 expires: DateTime.UtcNow.AddHours(1), // Token valid for 1 hour
@@ -44,8 +60,7 @@ namespace JWTAuthAPI.Services
 
         public string GenerateRefreshToken(ApplicationUser user)
         {
-            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
-            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+            var credentials = new SigningCredentials(GetSigningKey(), SecurityAlgorithms.HmacSha256);
 
             var claims = new[]
             {
@@ -57,8 +72,8 @@ namespace JWTAuthAPI.Services
             };
 
             var token = new JwtSecurityToken(
-                issuer: _config["Jwt:Issuer"],
-                audience: _config["Jwt:Audience"],
+                issuer: _jwtIssuer,
+                audience: _jwtAudience,
                 claims: claims,
                 notBefore: DateTime.UtcNow,
                 expires: DateTime.UtcNow.AddDays(7), // Refresh token valid for 7 days
@@ -73,15 +88,18 @@ namespace JWTAuthAPI.Services
             try
             {
                 var tokenHandler = new JwtSecurityTokenHandler();
-                var key = Encoding.UTF8.GetBytes(_config["Jwt:Key"]!);
+                var validateIssuer = !string.IsNullOrWhiteSpace(_jwtIssuer);
+                var validateAudience = !string.IsNullOrWhiteSpace(_jwtAudience);
 
                 var validationParameters = new TokenValidationParameters
                 {
-                    ValidateIssuer = false,
-                    ValidateAudience = false,
+                    ValidateIssuer = validateIssuer,
+                    ValidateAudience = validateAudience,
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new SymmetricSecurityKey(key),
+                    IssuerSigningKey = GetSigningKey(),
+                    ValidIssuer = _jwtIssuer,
+                    ValidAudience = _jwtAudience,
                     ClockSkew = TimeSpan.FromMinutes(5)
                 };
 
@@ -109,8 +127,7 @@ namespace JWTAuthAPI.Services
 
         public string GenerateStudentAccessToken(Student student)
         {
-            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
-            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+            var credentials = new SigningCredentials(GetSigningKey(), SecurityAlgorithms.HmacSha256);
 
             var claims = new[]
             {
@@ -122,8 +139,8 @@ namespace JWTAuthAPI.Services
             };
 
             var token = new JwtSecurityToken(
-                issuer: _config["Jwt:Issuer"],
-                audience: _config["Jwt:Audience"],
+                issuer: _jwtIssuer,
+                audience: _jwtAudience,
                 claims: claims,
                 notBefore: DateTime.UtcNow,
                 expires: DateTime.UtcNow.AddHours(1),
@@ -135,8 +152,7 @@ namespace JWTAuthAPI.Services
 
         public string GenerateStudentRefreshToken(Student student)
         {
-            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
-            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+            var credentials = new SigningCredentials(GetSigningKey(), SecurityAlgorithms.HmacSha256);
 
             var claims = new[]
             {
@@ -148,8 +164,8 @@ namespace JWTAuthAPI.Services
             };
 
             var token = new JwtSecurityToken(
-                issuer: _config["Jwt:Issuer"],
-                audience: _config["Jwt:Audience"],
+                issuer: _jwtIssuer,
+                audience: _jwtAudience,
                 claims: claims,
                 notBefore: DateTime.UtcNow,
                 expires: DateTime.UtcNow.AddDays(7),

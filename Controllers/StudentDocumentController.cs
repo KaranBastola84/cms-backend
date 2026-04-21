@@ -12,12 +12,10 @@ namespace JWTAuthAPI.Controllers
     public class StudentDocumentController : ControllerBase
     {
         private readonly IFileService _fileService;
-        private readonly JwtService _jwtService;
 
-        public StudentDocumentController(IFileService fileService, JwtService jwtService)
+        public StudentDocumentController(IFileService fileService)
         {
             _fileService = fileService;
-            _jwtService = jwtService;
         }
 
         [HttpPost("upload")]
@@ -122,14 +120,9 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpGet("{documentId}/download")]
-        [AllowAnonymous]
-        public async Task<IActionResult> DownloadDocument(int documentId, [FromQuery] string? accessToken = null)
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        public async Task<IActionResult> DownloadDocument(int documentId)
         {
-            if (!IsAuthorizedForDocumentDownload(accessToken))
-            {
-                return Unauthorized(new { message = "Unauthorized. Please log in as Admin or Staff." });
-            }
-
             var result = await _fileService.DownloadDocumentAsync(documentId);
 
             if (!result.IsSuccess)
@@ -139,32 +132,6 @@ namespace JWTAuthAPI.Controllers
 
             var (fileData, contentType, fileName) = result.Result;
             return File(fileData, contentType, fileName);
-        }
-
-        private bool IsAuthorizedForDocumentDownload(string? accessToken)
-        {
-            if (User?.Identity?.IsAuthenticated == true)
-            {
-                return User.IsInRole(Roles.Admin) || User.IsInRole(Roles.Staff);
-            }
-
-            if (string.IsNullOrWhiteSpace(accessToken))
-            {
-                return false;
-            }
-
-            var principal = _jwtService.ValidateToken(accessToken);
-            if (principal == null)
-            {
-                return false;
-            }
-
-            var roles = principal.Claims
-                .Where(c => c.Type == ClaimTypes.Role || c.Type == "role")
-                .Select(c => c.Value)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            return roles.Contains(Roles.Admin) || roles.Contains(Roles.Staff);
         }
 
         [HttpGet("student/{studentId}/type/{documentType}")]
