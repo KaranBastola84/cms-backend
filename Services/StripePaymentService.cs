@@ -50,6 +50,11 @@ namespace JWTAuthAPI.Services
                     return ResponseHelper.Error<StripePaymentResponseDto>("Currency is required");
                 }
 
+                if (dto.InstallmentId.HasValue && dto.InstallmentId.Value <= 0)
+                {
+                    return ResponseHelper.Error<StripePaymentResponseDto>("InstallmentId must be greater than 0 when provided");
+                }
+
                 // Validate student
                 var student = await _context.Students.FindAsync(dto.StudentId);
                 if (student == null)
@@ -57,32 +62,38 @@ namespace JWTAuthAPI.Services
                     return ResponseHelper.Error<StripePaymentResponseDto>($"Student with ID {dto.StudentId} not found");
                 }
 
-                // Validate installment
-                var installment = await _context.Installments
-                    .Include(i => i.PaymentPlan)
-                        .ThenInclude(p => p!.Student)
-                    .FirstOrDefaultAsync(i => i.InstallmentId == dto.InstallmentId);
+                var normalizedInstallmentId = dto.InstallmentId;
 
-                if (installment == null)
-                {
-                    return ResponseHelper.Error<StripePaymentResponseDto>($"Installment with ID {dto.InstallmentId} not found");
-                }
+                Installment? installment = null;
 
-                if (installment.Status == InstallmentStatus.Paid)
+                if (normalizedInstallmentId.HasValue)
                 {
-                    return ResponseHelper.Error<StripePaymentResponseDto>("This installment has already been paid");
-                }
+                    installment = await _context.Installments
+                        .Include(i => i.PaymentPlan)
+                            .ThenInclude(p => p!.Student)
+                        .FirstOrDefaultAsync(i => i.InstallmentId == normalizedInstallmentId.Value);
 
-                // Verify installment belongs to the student
-                if (installment.PaymentPlan?.StudentId != dto.StudentId)
-                {
-                    return ResponseHelper.Error<StripePaymentResponseDto>("Installment does not belong to this student");
-                }
+                    if (installment == null)
+                    {
+                        return ResponseHelper.Error<StripePaymentResponseDto>($"Installment with ID {normalizedInstallmentId.Value} not found");
+                    }
 
-                // Validate amount matches installment amount
-                if (Math.Abs(dto.Amount - installment.Amount) > 0.01m)
-                {
-                    return ResponseHelper.Error<StripePaymentResponseDto>($"Payment amount ({dto.Amount}) does not match installment amount ({installment.Amount})");
+                    if (installment.Status == InstallmentStatus.Paid)
+                    {
+                        return ResponseHelper.Error<StripePaymentResponseDto>("This installment has already been paid");
+                    }
+
+                    // Verify installment belongs to the student
+                    if (installment.PaymentPlan?.StudentId != dto.StudentId)
+                    {
+                        return ResponseHelper.Error<StripePaymentResponseDto>("Installment does not belong to this student");
+                    }
+
+                    // Validate amount matches installment amount
+                    if (Math.Abs(dto.Amount - installment.Amount) > 0.01m)
+                    {
+                        return ResponseHelper.Error<StripePaymentResponseDto>($"Payment amount ({dto.Amount}) does not match installment amount ({installment.Amount})");
+                    }
                 }
 
                 // Create Stripe Payment Intent
@@ -97,12 +108,16 @@ namespace JWTAuthAPI.Services
                     Metadata = new Dictionary<string, string>
                     {
                         { "student_id", dto.StudentId.ToString() },
-                        { "installment_id", dto.InstallmentId.ToString() },
                         { "student_name", student.Name },
                         { "student_email", student.Email },
                         { "created_by", createdBy }
                     }
                 };
+
+                if (normalizedInstallmentId.HasValue)
+                {
+                    options.Metadata.Add("installment_id", normalizedInstallmentId.Value.ToString());
+                }
 
                 var service = new PaymentIntentService();
                 var paymentIntent = await service.CreateAsync(options);
@@ -112,7 +127,7 @@ namespace JWTAuthAPI.Services
                 {
                     PaymentIntentId = paymentIntent.Id,
                     StudentId = dto.StudentId,
-                    InstallmentId = dto.InstallmentId,
+                    InstallmentId = normalizedInstallmentId,
                     Amount = dto.Amount,
                     Currency = dto.Currency,
                     Status = Models.PaymentStatus.Pending,
@@ -125,10 +140,13 @@ namespace JWTAuthAPI.Services
                 _context.StripePayments.Add(stripePayment);
                 await _context.SaveChangesAsync();
 
-                // Update installment with payment intent ID
-                installment.StripePaymentIntentId = paymentIntent.Id;
-                installment.Status = InstallmentStatus.Pending;
-                await _context.SaveChangesAsync();
+                // Update installment only when a specific installment payment is being processed.
+                if (installment != null)
+                {
+                    installment.StripePaymentIntentId = paymentIntent.Id;
+                    installment.Status = InstallmentStatus.Pending;
+                    await _context.SaveChangesAsync();
+                }
 
                 // Log
                 await _auditService.LogAsync(
@@ -229,6 +247,33 @@ namespace JWTAuthAPI.Services
             }
         }
 
+        public async Task<ApiResponse<StripePaymentResponseDto>> ConfirmPaymentByIntentIdAsync(string paymentIntentId)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(paymentIntentId))
+                {
+                    return ResponseHelper.Error<StripePaymentResponseDto>("PaymentIntentId is required");
+                }
+
+                var payment = await _context.StripePayments
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.PaymentIntentId == paymentIntentId);
+
+                if (payment == null)
+                {
+                    return ResponseHelper.Error<StripePaymentResponseDto>($"Payment with intent ID '{paymentIntentId}' not found");
+                }
+
+                return await ConfirmPaymentAsync(payment.StripePaymentId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error confirming payment by intent ID {PaymentIntentId}", paymentIntentId);
+                return ResponseHelper.Error<StripePaymentResponseDto>($"An error occurred while confirming payment by intent ID: {ex.Message}");
+            }
+        }
+
         public async Task<ApiResponse<string>> HandleWebhookAsync(Event stripeEvent)
         {
             try
@@ -281,28 +326,40 @@ namespace JWTAuthAPI.Services
                 // Get payment intent from Stripe
                 var service = new PaymentIntentService();
                 var paymentIntent = await service.GetAsync(payment.PaymentIntentId);
+                var wasAlreadyPaid = payment.Status == Models.PaymentStatus.Paid;
 
                 // Update payment status
-                payment.Status = paymentIntent.Status == "succeeded" ? Models.PaymentStatus.Paid : Models.PaymentStatus.Failed;
+                payment.Status = paymentIntent.Status switch
+                {
+                    "succeeded" => Models.PaymentStatus.Paid,
+                    "processing" => Models.PaymentStatus.Pending,
+                    "requires_payment_method" => Models.PaymentStatus.Pending,
+                    "requires_confirmation" => Models.PaymentStatus.Pending,
+                    "requires_action" => Models.PaymentStatus.Pending,
+                    _ => Models.PaymentStatus.Failed
+                };
                 payment.PaymentMethod = paymentIntent.PaymentMethodTypes?.FirstOrDefault();
                 payment.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
 
-                if (payment.Status == Models.PaymentStatus.Paid && payment.InstallmentId.HasValue)
+                if (payment.Status == Models.PaymentStatus.Paid)
                 {
-                    // Mark installment as paid
-                    var payDto = new PayInstallmentDto
+                    if (payment.InstallmentId.HasValue && !wasAlreadyPaid)
                     {
-                        InstallmentId = payment.InstallmentId.Value,
-                        Amount = payment.Amount,
-                        PaymentMethod = "Stripe",
-                        Remarks = $"Paid via Stripe - Payment Intent: {payment.PaymentIntentId}"
-                    };
+                        // Mark installment as paid once per payment to avoid duplicates.
+                        var payDto = new PayInstallmentDto
+                        {
+                            InstallmentId = payment.InstallmentId.Value,
+                            Amount = payment.Amount,
+                            PaymentMethod = "Stripe",
+                            Remarks = $"Paid via Stripe - Payment Intent: {payment.PaymentIntentId}"
+                        };
 
-                    await _paymentPlanService.PayInstallmentAsync(payment.InstallmentId.Value, payDto, "System");
+                        await _paymentPlanService.PayInstallmentAsync(payment.InstallmentId.Value, payDto, "System");
+                    }
 
-                    // Complete admission if student is still PendingPayment
+                    // Complete admission even for non-installment admission payments.
                     await CompleteStudentAdmissionIfPendingAsync(payment.StudentId);
                 }
 
@@ -324,6 +381,7 @@ namespace JWTAuthAPI.Services
 
             if (payment != null)
             {
+                var wasAlreadyPaid = payment.Status == Models.PaymentStatus.Paid;
                 payment.Status = Models.PaymentStatus.Paid;
                 payment.PaymentMethod = paymentIntent.PaymentMethodTypes?.FirstOrDefault();
                 payment.UpdatedAt = DateTime.UtcNow;
@@ -331,7 +389,7 @@ namespace JWTAuthAPI.Services
                 await _context.SaveChangesAsync();
 
                 // Mark installment as paid
-                if (payment.InstallmentId.HasValue)
+                if (payment.InstallmentId.HasValue && !wasAlreadyPaid)
                 {
                     var payDto = new PayInstallmentDto
                     {
@@ -342,10 +400,10 @@ namespace JWTAuthAPI.Services
                     };
 
                     await _paymentPlanService.PayInstallmentAsync(payment.InstallmentId.Value, payDto, "System");
-
-                    // Complete admission if student is still PendingPayment
-                    await CompleteStudentAdmissionIfPendingAsync(payment.StudentId);
                 }
+
+                // Complete admission even for non-installment admission payments.
+                await CompleteStudentAdmissionIfPendingAsync(payment.StudentId);
 
                 // Log success
                 await _auditService.LogAsync(

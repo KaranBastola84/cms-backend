@@ -59,7 +59,7 @@ namespace JWTAuthAPI.Controllers
             try
             {
                 var stripeSignature = Request.Headers["Stripe-Signature"].ToString();
-                var webhookSecret = _configuration["StripeSettings:WebhookSecret"];
+                var webhookSecret = _configuration["Stripe:WebhookSecret"];
 
                 // SECURITY: Always require webhook signature validation
                 if (string.IsNullOrWhiteSpace(webhookSecret))
@@ -97,6 +97,14 @@ namespace JWTAuthAPI.Controllers
         public async Task<IActionResult> ConfirmPayment(int paymentId)
         {
             var result = await _stripePaymentService.ConfirmPaymentAsync(paymentId);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
+        }
+
+        [HttpPost("confirm-by-intent/{paymentIntentId}")]
+        [Authorize]
+        public async Task<IActionResult> ConfirmPaymentByIntentId(string paymentIntentId)
+        {
+            var result = await _stripePaymentService.ConfirmPaymentByIntentIdAsync(paymentIntentId);
             return result.IsSuccess ? Ok(result) : BadRequest(result);
         }
     }

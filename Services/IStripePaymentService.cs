@@ -10,6 +10,7 @@ namespace JWTAuthAPI.Services
         Task<ApiResponse<StripePaymentResponseDto>> GetStripePaymentByIdAsync(int paymentId);
         Task<ApiResponse<List<StripePaymentResponseDto>>> GetStripePaymentsByStudentIdAsync(int studentId);
         Task<ApiResponse<StripePaymentResponseDto>> GetPaymentByIntentIdAsync(string paymentIntentId);
+        Task<ApiResponse<StripePaymentResponseDto>> ConfirmPaymentByIntentIdAsync(string paymentIntentId);
         Task<ApiResponse<string>> HandleWebhookAsync(Event stripeEvent);
         Task<ApiResponse<StripePaymentResponseDto>> ConfirmPaymentAsync(int paymentId);
     }

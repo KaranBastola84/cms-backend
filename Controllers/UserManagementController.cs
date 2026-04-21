@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using JWTAuthAPI.Data;
@@ -13,19 +14,34 @@ namespace JWTAuthAPI.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly Services.IAuditService _auditService;
+        private readonly IPasswordHasher<Student> _studentPasswordHasher;
 
-        public UserManagementController(ApplicationDbContext context, Services.IAuditService auditService)
+        public UserManagementController(
+            ApplicationDbContext context,
+            Services.IAuditService auditService,
+            IPasswordHasher<Student> studentPasswordHasher)
         {
             _context = context;
             _auditService = auditService;
+            _studentPasswordHasher = studentPasswordHasher;
         }
 
         // Admin only
         [HttpGet("users")]
-        [Authorize(Roles = Roles.Admin)]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> GetAllUsers()
         {
-            var users = await _context.ApplicationUsers
+            var isAdmin = User.IsInRole(Roles.Admin);
+
+            var query = _context.ApplicationUsers.AsQueryable();
+            if (!isAdmin)
+            {
+                // Non-admins only need assignable active users for operational pages like inquiries.
+                query = query.Where(u => u.IsActive &&
+                    (u.Role == Roles.Admin || u.Role == Roles.Staff || u.Role == Roles.Trainer));
+            }
+
+            var users = await query
                 .Select(u => new
                 {
                     u.Id,
@@ -286,6 +302,11 @@ namespace JWTAuthAPI.Controllers
         public async Task<IActionResult> GetMyProfile()
         {
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                ?? User.FindFirst("role")?.Value
+                ?? string.Empty;
+            var isStudentRole = role.Equals(Roles.Student, StringComparison.OrdinalIgnoreCase)
+                || role.Equals(Roles.EnrolledStudent, StringComparison.OrdinalIgnoreCase);
 
             if (string.IsNullOrEmpty(userId) || !int.TryParse(userId, out int id))
                 return Unauthorized(new ApiResponse<string>
@@ -294,6 +315,55 @@ namespace JWTAuthAPI.Controllers
                     IsSuccess = false,
                     ErrorMessage = { "Invalid token" }
                 });
+
+            if (isStudentRole)
+            {
+                var student = await _context.Students
+                    .Where(s => s.StudentId == id)
+                    .Select(s => new
+                    {
+                        s.StudentId,
+                        s.Name,
+                        s.Email,
+                        s.Phone,
+                        s.Status,
+                        s.CreatedAt,
+                        s.UpdatedAt
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (student == null)
+                    return NotFound(new ApiResponse<string>
+                    {
+                        StatusCode = 404,
+                        IsSuccess = false,
+                        ErrorMessage = { "Student not found" }
+                    });
+
+                var parts = (student.Name ?? string.Empty)
+                    .Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                var firstName = parts.Length > 0 ? parts[0] : string.Empty;
+                var lastName = parts.Length > 1 ? parts[1] : string.Empty;
+
+                return Ok(new ApiResponse<object>
+                {
+                    StatusCode = 200,
+                    IsSuccess = true,
+                    Result = new
+                    {
+                        Id = student.StudentId,
+                        Username = student.Email,
+                        student.Email,
+                        Role = Roles.Student,
+                        IsActive = student.Status != StudentStatus.Suspended && student.Status != StudentStatus.Dropped,
+                        FirstName = firstName,
+                        LastName = lastName,
+                        PhoneNumber = student.Phone,
+                        student.CreatedAt,
+                        student.UpdatedAt
+                    }
+                });
+            }
 
             var user = await _context.ApplicationUsers
                 .Where(u => u.Id == id)
@@ -334,6 +404,11 @@ namespace JWTAuthAPI.Controllers
         public async Task<IActionResult> UpdateMyProfile([FromBody] UpdateProfileDto profileDto)
         {
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                ?? User.FindFirst("role")?.Value
+                ?? string.Empty;
+            var isStudentRole = role.Equals(Roles.Student, StringComparison.OrdinalIgnoreCase)
+                || role.Equals(Roles.EnrolledStudent, StringComparison.OrdinalIgnoreCase);
 
             if (string.IsNullOrEmpty(userId) || !int.TryParse(userId, out int id))
                 return Unauthorized(new ApiResponse<string>
@@ -342,6 +417,59 @@ namespace JWTAuthAPI.Controllers
                     IsSuccess = false,
                     ErrorMessage = { "Invalid token" }
                 });
+
+            if (isStudentRole)
+            {
+                var student = await _context.Students.FindAsync(id);
+
+                if (student == null)
+                    return NotFound(new ApiResponse<string>
+                    {
+                        StatusCode = 404,
+                        IsSuccess = false,
+                        ErrorMessage = { "Student not found" }
+                    });
+
+                student.Name = $"{profileDto.FirstName} {profileDto.LastName}".Trim();
+                if (!string.IsNullOrWhiteSpace(profileDto.PhoneNumber))
+                {
+                    student.Phone = profileDto.PhoneNumber;
+                }
+                student.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                await _auditService.LogAsync(
+                    ActionType.UPDATE,
+                    "Student",
+                    student.StudentId.ToString(),
+                    null,
+                    System.Text.Json.JsonSerializer.Serialize(new { student.Name, student.Phone }),
+                    $"Student {student.Email} updated profile",
+                    student.StudentId.ToString(),
+                    student.Email
+                );
+
+                var parts = student.Name.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                var firstName = parts.Length > 0 ? parts[0] : string.Empty;
+                var lastName = parts.Length > 1 ? parts[1] : string.Empty;
+
+                return Ok(new ApiResponse<object>
+                {
+                    StatusCode = 200,
+                    IsSuccess = true,
+                    Result = new
+                    {
+                        Id = student.StudentId,
+                        Username = student.Email,
+                        student.Email,
+                        FirstName = firstName,
+                        LastName = lastName,
+                        PhoneNumber = student.Phone,
+                        student.UpdatedAt
+                    }
+                });
+            }
 
             var user = await _context.ApplicationUsers.FindAsync(id);
 
@@ -397,6 +525,11 @@ namespace JWTAuthAPI.Controllers
         {
             // Get current user ID from token
             var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                ?? User.FindFirst("role")?.Value
+                ?? string.Empty;
+            var isStudentRole = role.Equals(Roles.Student, StringComparison.OrdinalIgnoreCase)
+                || role.Equals(Roles.EnrolledStudent, StringComparison.OrdinalIgnoreCase);
 
             if (string.IsNullOrEmpty(userId) || !int.TryParse(userId, out int id))
                 return Unauthorized(new ApiResponse<string>
@@ -405,6 +538,60 @@ namespace JWTAuthAPI.Controllers
                     IsSuccess = false,
                     ErrorMessage = { "Invalid token" }
                 });
+
+            if (isStudentRole)
+            {
+                var student = await _context.Students.FindAsync(id);
+
+                if (student == null)
+                    return NotFound(new ApiResponse<string>
+                    {
+                        StatusCode = 404,
+                        IsSuccess = false,
+                        ErrorMessage = { "Student not found" }
+                    });
+
+                var verifyResult = _studentPasswordHasher.VerifyHashedPassword(student, student.PasswordHash, changePasswordDto.CurrentPassword);
+                if (verifyResult == PasswordVerificationResult.Failed)
+                    return BadRequest(new ApiResponse<string>
+                    {
+                        StatusCode = 400,
+                        IsSuccess = false,
+                        ErrorMessage = { "Current password is incorrect" }
+                    });
+
+                var samePassword = _studentPasswordHasher.VerifyHashedPassword(student, student.PasswordHash, changePasswordDto.NewPassword);
+                if (samePassword != PasswordVerificationResult.Failed)
+                    return BadRequest(new ApiResponse<string>
+                    {
+                        StatusCode = 400,
+                        IsSuccess = false,
+                        ErrorMessage = { "New password must be different from current password" }
+                    });
+
+                student.PasswordHash = _studentPasswordHasher.HashPassword(student, changePasswordDto.NewPassword);
+                student.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                await _auditService.LogAsync(
+                    ActionType.PASSWORD_CHANGE,
+                    "Student",
+                    student.StudentId.ToString(),
+                    null,
+                    null,
+                    $"Student {student.Email} changed password",
+                    student.StudentId.ToString(),
+                    student.Email
+                );
+
+                return Ok(new ApiResponse<string>
+                {
+                    StatusCode = 200,
+                    IsSuccess = true,
+                    Result = "Password changed successfully. Please login again."
+                });
+            }
 
             // Find user in database
             var user = await _context.ApplicationUsers.FindAsync(id);

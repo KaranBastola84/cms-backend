@@ -11,6 +11,7 @@ namespace JWTAuthAPI.Services
         private readonly IAuditService _auditService;
         private readonly ILogger<FileService> _logger;
         private readonly IWebHostEnvironment _environment;
+        private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly string _uploadsFolder;
 
         // Allowed file extensions and max size
@@ -22,12 +23,14 @@ namespace JWTAuthAPI.Services
             ApplicationDbContext context,
             IAuditService auditService,
             ILogger<FileService> logger,
-            IWebHostEnvironment environment)
+            IWebHostEnvironment environment,
+            IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
             _auditService = auditService;
             _logger = logger;
             _environment = environment;
+            _httpContextAccessor = httpContextAccessor;
             _uploadsFolder = Path.Combine(_environment.ContentRootPath, "Uploads", "StudentDocuments");
 
             // Ensure uploads directory exists
@@ -287,6 +290,9 @@ namespace JWTAuthAPI.Services
 
         private StudentDocumentDto MapToDto(StudentDocument document)
         {
+            var baseUrl = $"/api/StudentDocument/{document.DocumentId}/download";
+            var downloadUrl = BuildDownloadUrlWithToken(baseUrl);
+
             return new StudentDocumentDto
             {
                 DocumentId = document.DocumentId,
@@ -297,8 +303,26 @@ namespace JWTAuthAPI.Services
                 ContentType = document.ContentType,
                 UploadedAt = document.UploadedAt,
                 Description = document.Description,
-                DownloadUrl = $"/api/StudentDocument/{document.DocumentId}/download"
+                DownloadUrl = downloadUrl
             };
+        }
+
+        private string BuildDownloadUrlWithToken(string baseUrl)
+        {
+            var authHeader = _httpContextAccessor.HttpContext?.Request.Headers.Authorization.ToString();
+
+            if (string.IsNullOrWhiteSpace(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return baseUrl;
+            }
+
+            var token = authHeader.Substring("Bearer ".Length).Trim();
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return baseUrl;
+            }
+
+            return $"{baseUrl}?accessToken={Uri.EscapeDataString(token)}";
         }
     }
 }

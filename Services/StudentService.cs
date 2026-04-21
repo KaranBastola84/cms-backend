@@ -13,19 +13,22 @@ namespace JWTAuthAPI.Services
         private readonly IAuditService _auditService;
         private readonly IEmailService _emailService;
         private readonly ILogger<StudentService> _logger;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
         public StudentService(
             ApplicationDbContext context,
             IPasswordHasher<Student> passwordHasher,
             IAuditService auditService,
             IEmailService emailService,
-            ILogger<StudentService> logger)
+            ILogger<StudentService> logger,
+            IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
             _passwordHasher = passwordHasher;
             _auditService = auditService;
             _emailService = emailService;
             _logger = logger;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<ApiResponse<StudentDto>> CreateStudentAsync(CreateStudentDto createDto, string createdBy)
@@ -34,13 +37,15 @@ namespace JWTAuthAPI.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                var normalizedEmail = NormalizeEmail(createDto.Email);
+
                 // Check if email already exists
                 var existingStudent = await _context.Students
-                    .FirstOrDefaultAsync(s => s.Email == createDto.Email);
+                    .FirstOrDefaultAsync(s => s.Email.ToLower() == normalizedEmail);
 
                 if (existingStudent != null)
                 {
-                    return ResponseHelper.Error<StudentDto>("A student with this email already exists");
+                    return ResponseHelper.Error<StudentDto>($"A student with email '{createDto.Email.Trim()}' already exists");
                 }
 
                 // Validate batch capacity (with row lock to prevent race condition)
@@ -53,7 +58,7 @@ namespace JWTAuthAPI.Services
                 var student = new Student
                 {
                     Name = createDto.Name,
-                    Email = createDto.Email,
+                    Email = createDto.Email.Trim(),
                     Phone = createDto.Phone,
                     CourseId = createDto.CourseId,
                     BatchId = createDto.BatchId,
@@ -92,6 +97,11 @@ namespace JWTAuthAPI.Services
 
                 var studentDto = MapToDto(student);
                 return ResponseHelper.Success(studentDto, "Student registered successfully. Please complete payment to confirm admission.");
+            }
+            catch (DbUpdateException ex) when (IsDuplicateEmailDbError(ex))
+            {
+                await transaction.RollbackAsync();
+                return ResponseHelper.Error<StudentDto>($"A student with email '{createDto.Email.Trim()}' already exists");
             }
             catch (Exception ex)
             {
@@ -177,6 +187,8 @@ namespace JWTAuthAPI.Services
                 }
 
                 var studentDto = MapToDto(student);
+                var paidStripeAmount = await GetPaidStripeTotalByStudentIdAsync(studentId);
+                ApplyStripePaidAmount(studentDto, paidStripeAmount);
                 return ResponseHelper.Success(studentDto);
             }
             catch (Exception ex)
@@ -227,6 +239,8 @@ namespace JWTAuthAPI.Services
                     .ToListAsync();
 
                 var paidPayments = payments.Where(p => p.Status == PaymentStatus.Paid).ToList();
+                var paidStripeAmount = paidPayments.Sum(p => p.Amount);
+                var totalFeesPaid = student.FeesPaid + paidStripeAmount;
 
                 var detail = new StudentDetailDto
                 {
@@ -245,10 +259,10 @@ namespace JWTAuthAPI.Services
                     CreatedAt = student.CreatedAt,
                     UpdatedAt = student.UpdatedAt,
                     AdmissionDate = student.AdmissionDate,
-                    FeesPaid = student.FeesPaid,
+                    FeesPaid = totalFeesPaid,
                     FeesTotal = student.FeesTotal,
                     CourseFee = courseFee,
-                    FeesRemaining = student.FeesTotal - student.FeesPaid,
+                    FeesRemaining = student.FeesTotal - totalFeesPaid,
                     ReceiptNumber = student.ReceiptNumber,
 
                     // Payment summary
@@ -283,7 +297,7 @@ namespace JWTAuthAPI.Services
                         ContentType = d.ContentType,
                         UploadedAt = d.UploadedAt,
                         Description = d.Description,
-                        DownloadUrl = $"/api/StudentDocument/{d.DocumentId}/download"
+                        DownloadUrl = BuildDocumentDownloadUrlWithToken(d.DocumentId)
                     }).ToList()
                 };
 
@@ -304,7 +318,13 @@ namespace JWTAuthAPI.Services
                     .OrderByDescending(s => s.CreatedAt)
                     .ToListAsync();
 
+                var paidStripeTotals = await GetPaidStripeTotalsByStudentIdsAsync(students.Select(s => s.StudentId));
                 var studentDtos = students.Select(MapToDto).ToList();
+                foreach (var studentDto in studentDtos)
+                {
+                    var paidStripeAmount = paidStripeTotals.GetValueOrDefault(studentDto.StudentId, 0m);
+                    ApplyStripePaidAmount(studentDto, paidStripeAmount);
+                }
                 return ResponseHelper.Success(studentDtos);
             }
             catch (Exception ex)
@@ -323,7 +343,13 @@ namespace JWTAuthAPI.Services
                     .OrderByDescending(s => s.CreatedAt)
                     .ToListAsync();
 
+                var paidStripeTotals = await GetPaidStripeTotalsByStudentIdsAsync(students.Select(s => s.StudentId));
                 var studentDtos = students.Select(MapToDto).ToList();
+                foreach (var studentDto in studentDtos)
+                {
+                    var paidStripeAmount = paidStripeTotals.GetValueOrDefault(studentDto.StudentId, 0m);
+                    ApplyStripePaidAmount(studentDto, paidStripeAmount);
+                }
                 return ResponseHelper.Success(studentDtos);
             }
             catch (Exception ex)
@@ -347,12 +373,14 @@ namespace JWTAuthAPI.Services
                 // Check if email is being changed and if it already exists
                 if (!string.IsNullOrEmpty(updateDto.Email) && updateDto.Email != student.Email)
                 {
+                    var normalizedEmail = NormalizeEmail(updateDto.Email);
+
                     var emailExists = await _context.Students
-                        .AnyAsync(s => s.Email == updateDto.Email && s.StudentId != studentId);
+                        .AnyAsync(s => s.Email.ToLower() == normalizedEmail && s.StudentId != studentId);
 
                     if (emailExists)
                     {
-                        return ResponseHelper.Error<StudentDto>("A student with this email already exists");
+                        return ResponseHelper.Error<StudentDto>($"A student with email '{updateDto.Email.Trim()}' already exists");
                     }
                 }
 
@@ -367,7 +395,7 @@ namespace JWTAuthAPI.Services
                 if (!string.IsNullOrEmpty(updateDto.Email) && updateDto.Email != student.Email)
                 {
                     changes.Add($"Email: {student.Email} → {updateDto.Email}");
-                    student.Email = updateDto.Email;
+                    student.Email = updateDto.Email.Trim();
                 }
 
                 if (!string.IsNullOrEmpty(updateDto.Phone) && updateDto.Phone != student.Phone)
@@ -470,11 +498,27 @@ namespace JWTAuthAPI.Services
                 var studentDto = MapToDto(student);
                 return ResponseHelper.Success(studentDto, "Student updated successfully");
             }
+            catch (DbUpdateException ex) when (IsDuplicateEmailDbError(ex))
+            {
+                return ResponseHelper.Error<StudentDto>($"A student with email '{updateDto.Email?.Trim()}' already exists");
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating student");
                 return ResponseHelper.Error<StudentDto>("An error occurred while updating the student");
             }
+        }
+
+        private static string NormalizeEmail(string email)
+        {
+            return email.Trim().ToLower();
+        }
+
+        private static bool IsDuplicateEmailDbError(DbUpdateException ex)
+        {
+            var allMessages = ex.ToString().ToLowerInvariant();
+            return allMessages.Contains("email") &&
+                   (allMessages.Contains("duplicate") || allMessages.Contains("unique") || allMessages.Contains("2601") || allMessages.Contains("2627"));
         }
 
         public async Task<ApiResponse<bool>> DeleteStudentAsync(int studentId, string deletedBy)
@@ -559,6 +603,8 @@ namespace JWTAuthAPI.Services
                 }
 
                 var studentDto = MapToDto(student);
+                var paidStripeAmount = await GetPaidStripeTotalByStudentIdAsync(student.StudentId);
+                ApplyStripePaidAmount(studentDto, paidStripeAmount);
                 return ResponseHelper.Success(studentDto);
             }
             catch (Exception ex)
@@ -624,7 +670,7 @@ namespace JWTAuthAPI.Services
                         ContentType = d.ContentType,
                         UploadedAt = d.UploadedAt,
                         Description = d.Description,
-                        DownloadUrl = $"/api/StudentDocument/{d.DocumentId}/download"
+                        DownloadUrl = BuildDocumentDownloadUrlWithToken(d.DocumentId)
                     }).ToList()
                 };
 
@@ -741,6 +787,34 @@ namespace JWTAuthAPI.Services
             };
         }
 
+        private async Task<decimal> GetPaidStripeTotalByStudentIdAsync(int studentId)
+        {
+            return await _context.StripePayments
+                .Where(p => p.StudentId == studentId && p.Status == PaymentStatus.Paid)
+                .SumAsync(p => p.Amount);
+        }
+
+        private async Task<Dictionary<int, decimal>> GetPaidStripeTotalsByStudentIdsAsync(IEnumerable<int> studentIds)
+        {
+            var ids = studentIds.Distinct().ToList();
+            if (!ids.Any())
+            {
+                return new Dictionary<int, decimal>();
+            }
+
+            return await _context.StripePayments
+                .Where(p => ids.Contains(p.StudentId) && p.Status == PaymentStatus.Paid)
+                .GroupBy(p => p.StudentId)
+                .Select(g => new { StudentId = g.Key, Total = g.Sum(x => x.Amount) })
+                .ToDictionaryAsync(x => x.StudentId, x => x.Total);
+        }
+
+        private static void ApplyStripePaidAmount(StudentDto studentDto, decimal paidStripeAmount)
+        {
+            studentDto.FeesPaid += paidStripeAmount;
+            studentDto.FeesRemaining = studentDto.FeesTotal - studentDto.FeesPaid;
+        }
+
         public async Task<ApiResponse<List<CashPaymentRecordDto>>> GetCashPaymentsByStudentIdAsync(int studentId)
         {
             try
@@ -779,6 +853,25 @@ namespace JWTAuthAPI.Services
             var random = new Random();
             return new string(Enumerable.Repeat(chars, 10)
                 .Select(s => s[random.Next(s.Length)]).ToArray());
+        }
+
+        private string BuildDocumentDownloadUrlWithToken(int documentId)
+        {
+            var baseUrl = $"/api/StudentDocument/{documentId}/download";
+            var authHeader = _httpContextAccessor.HttpContext?.Request.Headers.Authorization.ToString();
+
+            if (string.IsNullOrWhiteSpace(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return baseUrl;
+            }
+
+            var token = authHeader.Substring("Bearer ".Length).Trim();
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return baseUrl;
+            }
+
+            return $"{baseUrl}?accessToken={Uri.EscapeDataString(token)}";
         }
 
         private async Task<ApiResponse<bool>> ValidateBatchCapacityAsync(int batchId, int? excludeStudentId)

@@ -3,6 +3,7 @@ using JWTAuthAPI.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using System.Text.Json;
 
 namespace JWTAuthAPI.Controllers
 {
@@ -26,7 +27,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> CreateStudent([FromBody] CreateStudentDto createDto)
         {
             if (!ModelState.IsValid)
@@ -86,7 +87,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> UpdateStudent(int id, [FromBody] UpdateStudentDto updateDto)
         {
             if (!ModelState.IsValid)
@@ -106,9 +107,17 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPatch("{id}/status")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
-        public async Task<IActionResult> ChangeStudentStatus(int id, [FromBody] StudentStatus status)
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        public async Task<IActionResult> ChangeStudentStatus(int id, [FromBody] JsonElement statusPayload)
         {
+            if (!TryParseStatusPayload(statusPayload, out var status))
+            {
+                return BadRequest(new
+                {
+                    message = "Invalid status payload. Use either a raw value like \"Enrolled\" or an object like { \"status\": \"Enrolled\" }."
+                });
+            }
+
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
             var result = await _studentService.ChangeStudentStatusAsync(id, status, userId);
 
@@ -118,6 +127,36 @@ namespace JWTAuthAPI.Controllers
             }
 
             return Ok(result);
+        }
+
+        private static bool TryParseStatusPayload(JsonElement payload, out StudentStatus status)
+        {
+            status = default;
+
+            switch (payload.ValueKind)
+            {
+                case JsonValueKind.String:
+                    return Enum.TryParse(payload.GetString(), true, out status);
+
+                case JsonValueKind.Number:
+                    if (payload.TryGetInt32(out var numericStatus) && Enum.IsDefined(typeof(StudentStatus), numericStatus))
+                    {
+                        status = (StudentStatus)numericStatus;
+                        return true;
+                    }
+                    return false;
+
+                case JsonValueKind.Object:
+                    if (payload.TryGetProperty("status", out var statusProperty) ||
+                        payload.TryGetProperty("Status", out statusProperty))
+                    {
+                        return TryParseStatusPayload(statusProperty, out status);
+                    }
+                    return false;
+
+                default:
+                    return false;
+            }
         }
 
         [HttpDelete("{id}")]
@@ -149,7 +188,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpGet("{id}/registration-summary")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> GetRegistrationSummary(int id)
         {
             var result = await _studentService.GetRegistrationSummaryAsync(id);
@@ -163,7 +202,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPost("{id}/cash-payment")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> ProcessCashPayment(int id, [FromBody] CashPaymentDto dto)
         {
             if (dto.StudentId != id)
@@ -201,6 +240,31 @@ namespace JWTAuthAPI.Controllers
         {
             var result = await _fileService.GetStudentDocumentsAsync(id);
             return Ok(result);
+        }
+
+        [HttpGet("{id}/documents/{documentId}/download")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
+        public async Task<IActionResult> DownloadStudentDocument(int id, int documentId)
+        {
+            var documentResult = await _fileService.GetDocumentByIdAsync(documentId);
+            if (!documentResult.IsSuccess || documentResult.Result == null)
+            {
+                return NotFound(documentResult);
+            }
+
+            if (documentResult.Result.StudentId != id)
+            {
+                return BadRequest(new { message = "Document does not belong to the specified student" });
+            }
+
+            var downloadResult = await _fileService.DownloadDocumentAsync(documentId);
+            if (!downloadResult.IsSuccess)
+            {
+                return NotFound(downloadResult);
+            }
+
+            var (fileData, contentType, fileName) = downloadResult.Result;
+            return File(fileData, contentType, fileName);
         }
     }
 }

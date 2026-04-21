@@ -47,5 +47,17 @@ namespace JWTAuthAPI.Controllers
             var logs = await _auditService.GetLogsByModuleAsync(module, pageNumber, pageSize);
             return Ok(ResponseHelper.Success(logs, $"{module} audit logs retrieved successfully"));
         }
+
+        /// <summary>
+        /// Export all audit logs as a PDF file (from the beginning till now)
+        /// </summary>
+        [HttpGet("export/pdf")]
+        public async Task<IActionResult> ExportAllLogsPdf()
+        {
+            var pdfBytes = await _auditService.ExportAllLogsPdfAsync();
+            var fileName = $"audit-logs-{DateTime.UtcNow:yyyyMMdd-HHmmss}.pdf";
+
+            return File(pdfBytes, "application/pdf", fileName);
+        }
     }
 }

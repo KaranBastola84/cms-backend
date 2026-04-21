@@ -11,6 +11,7 @@ namespace JWTAuthAPI.Services
         Task SendAccountActivationEmailAsync(string toEmail, string fullName, string email);
         Task SendStudentCredentialsEmailAsync(string toEmail, string studentName, string password);
         Task SendAdmissionConfirmationEmailAsync(string toEmail, Student student, string? tempPassword = null);
+        Task SendCertificateIssuedEmailAsync(string toEmail, string studentName, string certificateNumber, string moduleName, CertificateDeliveryMode deliveryMode, string downloadUrl);
         Task SendOrderConfirmationEmailAsync(string toEmail, string customerName, string orderNumber, decimal totalAmount);
     }
 
@@ -720,6 +721,90 @@ namespace JWTAuthAPI.Services
                 <p style='color: #999999; font-size: 11px; margin: 0;'>
                     This email was sent to {student.Email}. Please add us to your address book.
                 </p>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>";
+        }
+
+        public async Task SendCertificateIssuedEmailAsync(string toEmail, string studentName, string certificateNumber, string moduleName, CertificateDeliveryMode deliveryMode, string downloadUrl)
+        {
+            try
+            {
+                var smtpSettings = _configuration.GetSection("SmtpSettings");
+                var fromEmail = smtpSettings["FromEmail"] ?? throw new InvalidOperationException("SMTP FromEmail is not configured");
+                var fromName = smtpSettings["FromName"] ?? "Coffee School";
+                var smtpServer = smtpSettings["Server"] ?? throw new InvalidOperationException("SMTP Server is not configured");
+                var smtpPort = int.Parse(smtpSettings["Port"] ?? "587");
+                var smtpUsername = smtpSettings["Username"] ?? throw new InvalidOperationException("SMTP Username is not configured");
+                var smtpPassword = smtpSettings["Password"] ?? throw new InvalidOperationException("SMTP Password is not configured");
+                var enableSsl = bool.Parse(smtpSettings["EnableSsl"] ?? "true");
+
+                using (var client = new SmtpClient(smtpServer, smtpPort))
+                {
+                    client.EnableSsl = enableSsl;
+                    client.Credentials = new NetworkCredential(smtpUsername, smtpPassword);
+
+                    var mailMessage = new MailMessage
+                    {
+                        From = new MailAddress(fromEmail, fromName),
+                        Subject = $"Certificate Issued - {certificateNumber}",
+                        IsBodyHtml = true,
+                        Body = GetCertificateIssuedEmailBody(studentName, certificateNumber, moduleName, deliveryMode, downloadUrl)
+                    };
+
+                    mailMessage.To.Add(toEmail);
+                    await client.SendMailAsync(mailMessage);
+                    _logger.LogInformation("Certificate issued email sent to {Email} for certificate {CertificateNumber}", toEmail, certificateNumber);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send certificate-issued email to {Email}", toEmail);
+                throw;
+            }
+        }
+
+        private static string GetCertificateIssuedEmailBody(string studentName, string certificateNumber, string moduleName, CertificateDeliveryMode deliveryMode, string downloadUrl)
+        {
+            var deliveryMessage = deliveryMode == CertificateDeliveryMode.Digital
+                ? $"<p style='margin: 10px 0;'>Your digital certificate is ready. You can download it from: <a href='{downloadUrl}'>{downloadUrl}</a></p>"
+                : "<p style='margin: 10px 0;'>Your certificate has been generated. Please collect the signed hard copy from the school office.</p>";
+
+            return $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Certificate Issued</title>
+</head>
+<body style='margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;'>
+    <table role='presentation' style='width: 100%; border-collapse: collapse;'>
+        <tr>
+            <td style='padding: 40px 0; text-align: center; background: linear-gradient(135deg, #6B4423 0%, #8B6F47 100%);'>
+                <h1 style='color: #ffffff; margin: 0; font-size: 28px;'>Coffee School</h1>
+            </td>
+        </tr>
+        <tr>
+            <td style='padding: 0;'>
+                <table role='presentation' style='width: 620px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
+                    <tr>
+                        <td style='padding: 35px 30px;'>
+                            <h2 style='color: #6B4423; margin-top: 0;'>Certificate Issued Successfully</h2>
+                            <p>Dear <strong>{studentName}</strong>,</p>
+                            <p>Congratulations. Your certificate has been issued for module <strong>{moduleName}</strong>.</p>
+                            <div style='background-color: #f8f8f8; border-left: 4px solid #6B4423; padding: 15px; margin: 20px 0;'>
+                                <p style='margin: 0;'><strong>Certificate Number:</strong> {certificateNumber}</p>
+                                <p style='margin: 8px 0 0 0;'><strong>Issued On:</strong> {DateTime.UtcNow:MMMM dd, yyyy}</p>
+                            </div>
+                            {deliveryMessage}
+                            <p style='margin-top: 20px;'>Keep this certificate number for verification and future reference.</p>
+                            <p>Best regards,<br><strong>Coffee School Team</strong></p>
+                        </td>
+                    </tr>
+                </table>
             </td>
         </tr>
     </table>

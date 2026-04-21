@@ -22,8 +22,17 @@ namespace JWTAuthAPI.Models
         public decimal CollectionRate { get; set; }
         public decimal TodayCollection { get; set; }
         public decimal MonthCollection { get; set; }
+        /// <summary>
+        /// Tuition + Stripe Revenue (includes all tuition payments via Stripe, both installment and direct). Display as: "Tuition + Stripe Revenue"
+        /// </summary>
         public decimal TotalStripeRevenue { get; set; }
+        /// <summary>
+        /// Cash/QR/Order Revenue (includes all cash payments and paid shop orders). Display as: "Cash/QR/Order Revenue"
+        /// </summary>
         public decimal TotalCashRevenue { get; set; }
+        /// <summary>
+        /// Number of cash/QR payments and paid orders. Display as: "Cash/QR/Order Payments"
+        /// </summary>
         public int TotalCashPayments { get; set; }
         public decimal YearCollection { get; set; }
         public DateTime GeneratedAt { get; set; } = DateTime.UtcNow;

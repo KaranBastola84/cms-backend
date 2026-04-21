@@ -7,7 +7,7 @@ namespace JWTAuthAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize(Roles = "Admin,Staff,Trainer")]
     public class FinancialReportController : ControllerBase
     {
         private readonly IFinancialReportService _financialReportService;

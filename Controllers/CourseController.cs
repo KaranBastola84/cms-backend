@@ -19,7 +19,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> CreateCourse([FromBody] CreateCourseDto createDto)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";
@@ -61,7 +61,7 @@ namespace JWTAuthAPI.Controllers
         }
 
         [HttpPut("{id}")]
-        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff}")]
+        [Authorize(Roles = $"{Roles.Admin},{Roles.Staff},{Roles.Trainer}")]
         public async Task<IActionResult> UpdateCourse(int id, [FromBody] UpdateCourseDto updateDto)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "System";

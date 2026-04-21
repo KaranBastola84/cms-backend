@@ -9,21 +9,9 @@ namespace JWTAuthAPI.Models
         // Dashboard
         public const string Dashboard = "dashboard";
 
-        // User Management
-        public const string ViewUsers = "view-users";
-        public const string ManageUsers = "manage-users";
-
         // Student Management
         public const string ViewStudents = "view-students";
         public const string ManageStudents = "manage-students";
-
-        // Staff Management
-        public const string ViewStaff = "view-staff";
-        public const string ManageStaff = "manage-staff";
-
-        // Trainer Management
-        public const string ViewTrainers = "view-trainers";
-        public const string ManageTrainers = "manage-trainers";
 
         // Courses & Batches
         public const string CoursesBatches = "courses-batches";
@@ -43,12 +31,8 @@ namespace JWTAuthAPI.Models
         // Reports
         public const string Reports = "reports";
 
-        // Audit Logs
-        public const string AuditLogs = "audit-logs";
-
-        // Inventory & Orders
-        public const string Inventory = "inventory";
-        public const string Orders = "orders";
+        // Certificates
+        public const string Certificates = "certificates";
 
         /// <summary>
         /// Full master list with labels and grouping — returned by GET /api/permissions
@@ -56,23 +40,15 @@ namespace JWTAuthAPI.Models
         public static List<PermissionDefinition> All => new()
         {
             new("dashboard", "Dashboard", "General"),
-            new("view-users", "View Users", "User Management"),
-            new("manage-users", "Manage Users", "User Management"),
             new("view-students", "View Students", "Student Management"),
             new("manage-students", "Manage Students", "Student Management"),
-            new("view-staff", "View Staff", "Staff Management"),
-            new("manage-staff", "Manage Staff", "Staff Management"),
-            new("view-trainers", "View Trainers", "Trainer Management"),
-            new("manage-trainers", "Manage Trainers", "Trainer Management"),
             new("courses-batches", "Courses & Batches", "Academic"),
             new("attendance", "Attendance", "Academic"),
             new("inquiries", "Inquiries", "CRM"),
             new("payment-finance", "Payments & Finance", "Finance"),
             new("student-documents", "Student Documents", "Student Management"),
             new("reports", "Reports", "Finance"),
-            new("audit-logs", "Audit Logs", "Administration"),
-            new("inventory", "Inventory", "Store"),
-            new("orders", "Orders", "Store"),
+            new("certificates", "Certificates", "Academic"),
         };
 
         /// <summary>
@@ -83,15 +59,32 @@ namespace JWTAuthAPI.Models
         {
             [Roles.Staff] = new()
             {
-                Dashboard, ViewStudents, ManageStudents, Attendance, Inquiries, StudentDocuments
+                Dashboard,
+                ViewStudents,
+                ManageStudents,
+                CoursesBatches,
+                Attendance,
+                Inquiries,
+                PaymentFinance,
+                Reports,
+                StudentDocuments
             },
             [Roles.Trainer] = new()
             {
-                Dashboard, ViewStudents, Attendance, CoursesBatches
+                Dashboard,
+                ViewStudents,
+                ManageStudents,
+                CoursesBatches,
+                Attendance,
+                Inquiries,
+                PaymentFinance,
+                Reports,
+                Certificates
             },
             [Roles.Student] = new()
             {
-                Dashboard
+                Dashboard,
+                Certificates
             }
         };
     }

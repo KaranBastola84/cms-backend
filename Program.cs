@@ -8,6 +8,8 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args); // Create a builder for the web application
 
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
 // Configure global request size limits (30MB max)
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
 {
@@ -109,8 +111,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 // Configure Stripe Settings
-builder.Services.Configure<JWTAuthAPI.Models.StripeSettings>(builder.Configuration.GetSection("StripeSettings"));
-Stripe.StripeConfiguration.ApiKey = builder.Configuration["StripeSettings:SecretKey"];
+builder.Services.Configure<JWTAuthAPI.Models.StripeSettings>(builder.Configuration.GetSection("Stripe"));
+Stripe.StripeConfiguration.ApiKey = builder.Configuration["Stripe:SecretKey"];
 
 builder.Services.AddScoped<JWTAuthAPI.Services.JwtService>(); // Register JwtService for dependency injection
 builder.Services.AddScoped<JWTAuthAPI.Services.IEmailService, JWTAuthAPI.Services.EmailService>(); // Register EmailService for dependency injection
@@ -127,6 +129,7 @@ builder.Services.AddScoped<JWTAuthAPI.Services.IStripePaymentService, JWTAuthAPI
 builder.Services.AddScoped<JWTAuthAPI.Services.IFeeStructureService, JWTAuthAPI.Services.FeeStructureService>(); // Register FeeStructureService
 builder.Services.AddScoped<JWTAuthAPI.Services.IFinancialReportService, JWTAuthAPI.Services.FinancialReportService>(); // Register FinancialReportService
 builder.Services.AddScoped<JWTAuthAPI.Services.IPermissionService, JWTAuthAPI.Services.PermissionService>(); // Register PermissionService
+builder.Services.AddScoped<JWTAuthAPI.Services.ICertificateService, JWTAuthAPI.Services.CertificateService>(); // Register CertificateService
 // Dashboard Services
 builder.Services.AddScoped<JWTAuthAPI.Services.IDashboardService, JWTAuthAPI.Services.DashboardService>(); // Register DashboardService for admin analytics
 builder.Services.AddScoped(typeof(Microsoft.AspNetCore.Identity.IPasswordHasher<>), typeof(Microsoft.AspNetCore.Identity.PasswordHasher<>)); // Register password hasher for students
